@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.ui.screens.PlayerScreen
 import com.tubelite.app.ui.screens.SearchScreen
