@@ -23,10 +23,16 @@ data class QualityOption(
     val hlsUrl: String?
 )
 
+data class AudioOption(
+    val label: String,
+    val url: String
+)
+
 data class PlayableStream(
     val title: String,
     val default: QualityOption,
     val options: List<QualityOption>,
+    val audioOptions: List<AudioOption>,
     val thumbnailUrl: String?
 )
 
@@ -56,7 +62,6 @@ object YoutubeRepository {
         extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
     }
 
-    /** ট্রেন্ডিং ভিডিও — লাইভ/প্রিমিয়ার বাদ দেওয়া হয় কারণ সেগুলো প্রায়ই প্লে-ব্যাক ফেইল করে */
     suspend fun getTrending(): List<VideoResult> = withContext(Dispatchers.IO) {
         ensureInit()
         val kioskList = ServiceList.YouTube.kioskList
@@ -67,14 +72,11 @@ object YoutubeRepository {
             .map { it.toVideoResult() }
     }
 
-        /** সম্পর্কিত ভিডিও — বর্তমান ভিডিওর পেজ থেকেই আসে */
     suspend fun getRelated(videoUrl: String): List<VideoResult> = withContext(Dispatchers.IO) {
         ensureInit()
         try {
             val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
-            info.relatedItems
-                .filterIsInstance<StreamInfoItem>()
-                .map { it.toVideoResult() }
+            info.relatedItems.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
         } catch (e: Exception) {
             emptyList()
         }
@@ -91,7 +93,8 @@ object YoutubeRepository {
             ?.map { QualityOption(it.getResolution() ?: "Auto", it.content, null, null, null) }
             ?: emptyList()
 
-        val bestAudio = info.audioStreams?.filter { it.content != null }?.maxByOrNull { it.averageBitrate }
+        val audioStreams = info.audioStreams?.filter { it.content != null } ?: emptyList()
+        val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
 
         val videoOnlyOptions = if (bestAudio != null) {
             info.videoOnlyStreams
@@ -106,6 +109,14 @@ object YoutubeRepository {
         val allOptions = (progressiveOptions + videoOnlyOptions).distinctBy { it.label }.ifEmpty { hlsOptions }
         if (allOptions.isEmpty()) error("Could not get any stream")
 
-        PlayableStream(info.name, allOptions.first(), allOptions, thumb)
+        val audioOptions = audioStreams
+            .distinctBy { it.averageBitrate }
+            .sortedByDescending { it.averageBitrate }
+            .mapIndexed { i, a ->
+                val kbps = if (a.averageBitrate > 0) "${a.averageBitrate / 1000}kbps" else "অডিও ${i + 1}"
+                AudioOption(kbps, a.content)
+            }
+
+        PlayableStream(info.name, allOptions.first(), allOptions, audioOptions, thumb)
     }
 }
