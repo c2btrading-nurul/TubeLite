@@ -16,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.C
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -49,24 +51,49 @@ private fun AppRoot() {
     val context = LocalContext.current
     val activity = context as? ComponentActivity
 
-    var controller by remember { mutableStateOf<MediaController?>(null) }
-    DisposableEffect(Unit) {
-        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        controllerFuture.addListener({
-            controller = controllerFuture.get()
-        }, MoreExecutors.directExecutor())
-        onDispose {
-            MediaController.releaseFuture(controllerFuture)
-        }
-    }
-
+    // এই state-গুলো নিচের controller-connect effect-এ ব্যবহার হয়, তাই আগে ডিক্লেয়ার করা হচ্ছে
     var nowPlaying by remember { mutableStateOf<VideoResult?>(null) }
     var playerExpanded by remember { mutableStateOf(false) }
     var autoPlay by remember { mutableStateOf(true) }
     var showSearch by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+
+    var controller by remember { mutableStateOf<MediaController?>(null) }
+    DisposableEffect(Unit) {
+        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+        controllerFuture.addListener({
+            val c = controllerFuture.get()
+            controller = c
+
+            // অ্যাপ বন্ধ করার পরও ব্যাকগ্রাউন্ডে ভিডিও/অডিও চলতে থাকলে, MediaController
+            // একই সেশনে রিকানেক্ট করে — কিন্তু nowPlaying (UI state) নতুন করে null থাকে।
+            // controller-এ চলমান মিডিয়া থাকলে সেখান থেকে VideoResult পুনর্গঠন করে
+            // মিনি-প্লেয়ারে আবার দেখানো হচ্ছে।
+            if (nowPlaying == null) {
+                val item = c.currentMediaItem
+                val mediaId = item?.mediaId
+                if (item != null && !mediaId.isNullOrBlank() && c.playbackState != Player.STATE_IDLE) {
+                    val meta = item.mediaMetadata
+                    val durationMs = c.duration
+                    nowPlaying = VideoResult(
+                        title = meta.title?.toString() ?: "",
+                        url = mediaId,
+                        uploaderName = meta.artist?.toString() ?: "",
+                        thumbnailUrl = meta.artworkUri?.toString(),
+                        durationSeconds = if (durationMs != C.TIME_UNSET) durationMs / 1000 else 0L
+                    )
+                    // মিনি-প্লেয়ার হিসেবে দেখানো হচ্ছে, সরাসরি ফুলস্ক্রিন প্লেয়ার খুলছে না —
+                    // ব্যবহারকারী ট্যাপ করলে PlayerScreen-এর resume-fix অনুযায়ী ঠিক ঐ পজিশন থেকেই চলবে।
+                    playerExpanded = false
+                }
+            }
+        }, MoreExecutors.directExecutor())
+        onDispose {
+            MediaController.releaseFuture(controllerFuture)
+        }
+    }
 
     fun playVideo(v: VideoResult) {
         nowPlaying = v
