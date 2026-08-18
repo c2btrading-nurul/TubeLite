@@ -13,13 +13,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
+import com.tubelite.app.data.PlayableStream
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
 import com.tubelite.app.download.DownloadHelper
-import kotlinx.coroutines.launch
+
+private const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36"
 
 @Composable
 fun PlayerScreen(
@@ -29,11 +34,10 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val scope = rememberCoroutineScope()
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var streamUrl by remember { mutableStateOf<String?>(null) }
+    var downloadUrl by remember { mutableStateOf<String?>(null) }
     var streamTitle by remember { mutableStateOf(video.title) }
 
     val exoPlayer = remember {
@@ -46,12 +50,39 @@ fun PlayerScreen(
         loading = true
         error = null
         try {
-            val playable = YoutubeRepository.getPlayableStream(video.url)
-            streamUrl = playable.videoStreamUrl
+            val playable: PlayableStream = YoutubeRepository.getPlayableStream(video.url)
             streamTitle = playable.title
-            exoPlayer.setMediaItem(MediaItem.fromUri(playable.videoStreamUrl))
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = autoPlayEnabled
+            downloadUrl = playable.progressiveUrl ?: playable.videoOnlyUrl
+
+            val dataSourceFactory = DefaultHttpDataSource.Factory().setUserAgent(UA)
+
+            val mediaSource = when {
+                playable.progressiveUrl != null ->
+                    ProgressiveMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(playable.progressiveUrl))
+
+                playable.videoOnlyUrl != null && playable.audioOnlyUrl != null ->
+                    MergingMediaSource(
+                        ProgressiveMediaSource.Factory(dataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(playable.videoOnlyUrl)),
+                        ProgressiveMediaSource.Factory(dataSourceFactory)
+                            .createMediaSource(MediaItem.fromUri(playable.audioOnlyUrl))
+                    )
+
+                playable.hlsUrl != null ->
+                    HlsMediaSource.Factory(dataSourceFactory)
+                        .createMediaSource(MediaItem.fromUri(playable.hlsUrl))
+
+                else -> null
+            }
+
+            if (mediaSource != null) {
+                exoPlayer.setMediaSource(mediaSource)
+                exoPlayer.prepare()
+                exoPlayer.playWhenReady = autoPlayEnabled
+            } else {
+                error = "কোনো প্লে-যোগ্য স্ট্রিম পাওয়া যায়নি"
+            }
         } catch (e: Exception) {
             error = "স্ট্রিম লোড করা যায়নি: ${e.message}"
         } finally {
@@ -96,10 +127,12 @@ fun PlayerScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(onClick = {
-                val url = streamUrl
+                val url = downloadUrl
                 if (url != null) {
                     DownloadHelper.downloadVideo(context, url, streamTitle)
                     Toast.makeText(context, "ডাউনলোড শুরু হয়েছে", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "এই ভিডিওর জন্য ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                 }
             }) {
                 Icon(Icons.Default.Download, contentDescription = null)
