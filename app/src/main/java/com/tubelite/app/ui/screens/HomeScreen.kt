@@ -6,22 +6,25 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.tubelite.app.data.SearchHistoryStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
 import kotlinx.coroutines.launch
 
-/** YouTube হোম ফিডের মতো একটা স্ক্রলেবল ভিডিও ফিড */
 @Composable
 fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
-    var videos by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
+    val context = LocalContext.current
+    var recommended by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
+    var trending by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -29,7 +32,16 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
     LaunchedEffect(Unit) {
         scope.launch {
             try {
-                videos = YoutubeRepository.getTrending()
+                val history = SearchHistoryStore.getRecent(context, 3)
+                val personalized = mutableListOf<VideoResult>()
+                for (q in history) {
+                    try {
+                        personalized += YoutubeRepository.search(q).take(6)
+                    } catch (_: Exception) { /* skip a failed query */ }
+                }
+                val trendingList = YoutubeRepository.getTrending()
+                recommended = personalized.distinctBy { it.url }
+                trending = trendingList.filterNot { t -> recommended.any { it.url == t.url } }
             } catch (e: Exception) {
                 error = e.message ?: "লোড করা যায়নি"
             } finally {
@@ -53,9 +65,24 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
-        items(videos) { video ->
-            HomeFeedCard(video) { onVideoSelected(video) }
+        if (recommended.isNotEmpty()) {
+            item {
+                Text(
+                    "আপনার আগ্রহ অনুযায়ী",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+                )
+            }
+            items(recommended) { video -> HomeFeedCard(video) { onVideoSelected(video) } }
         }
+        item {
+            Text(
+                "ট্রেন্ডিং",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+            )
+        }
+        items(trending) { video -> HomeFeedCard(video) { onVideoSelected(video) } }
     }
 }
 
