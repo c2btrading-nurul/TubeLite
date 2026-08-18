@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,6 +33,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.ui.PlayerView
+import coil.compose.AsyncImage
 import com.tubelite.app.data.PlayableStream
 import com.tubelite.app.data.QualityOption
 import com.tubelite.app.data.VideoResult
@@ -77,7 +79,6 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
 
-    // Load the stream for this video
     LaunchedEffect(video.url, controller) {
         if (controller == null) return@LaunchedEffect
         loading = true
@@ -102,7 +103,6 @@ fun PlayerScreen(
         related = YoutubeRepository.getRelated(video.url)
     }
 
-    // Autoplay-next when current video ends
     DisposableEffect(controller, related, autoPlayEnabled) {
         if (controller == null) return@DisposableEffect onDispose {}
         val listener = object : Player.Listener {
@@ -116,7 +116,6 @@ fun PlayerScreen(
         onDispose { controller.removeListener(listener) }
     }
 
-    // Fullscreen: hide system bars + lock landscape
     DisposableEffect(isFullscreen) {
         val window = activity?.window
         if (window != null) {
@@ -179,7 +178,6 @@ fun PlayerScreen(
                 }
             }
 
-            // Fullscreen + settings, together, synced with native controls visibility
             AnimatedVisibility(
                 visible = controlsVisible,
                 modifier = Modifier.align(Alignment.TopEnd)
@@ -284,15 +282,14 @@ private fun RelatedVideoRow(video: VideoResult, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
-            .then(Modifier)
+            .clickable(onClick = onClick)
     ) {
-        coil.compose.AsyncImage(
+        AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = null,
             modifier = Modifier
                 .width(140.dp)
                 .height(80.dp)
-                .androidx.compose.foundation.clickable(onClick = onClick)
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
