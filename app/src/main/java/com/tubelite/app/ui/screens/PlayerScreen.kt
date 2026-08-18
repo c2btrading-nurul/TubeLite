@@ -5,7 +5,6 @@ import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -178,7 +177,9 @@ fun PlayerScreen(
                 }
             }
 
-            AnimatedVisibility(
+            // Fully qualified call: avoids ambiguity with ColumnScope.AnimatedVisibility
+            // from the outer Column receiver in scope at this call site.
+            androidx.compose.animation.AnimatedVisibility(
                 visible = controlsVisible,
                 modifier = Modifier.align(Alignment.TopEnd)
             ) {
