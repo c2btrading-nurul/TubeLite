@@ -12,8 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.tubelite.app.data.SearchHistoryStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
 import kotlinx.coroutines.launch
@@ -21,6 +23,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(onVideoSelected: (VideoResult) -> Unit) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var loading by remember { mutableStateOf(false) }
@@ -34,6 +37,7 @@ fun SearchScreen(onVideoSelected: (VideoResult) -> Unit) {
         scope.launch {
             try {
                 results = YoutubeRepository.search(query)
+                SearchHistoryStore.add(context, query)
             } catch (e: Exception) {
                 error = e.message ?: "Search failed"
             } finally {
