@@ -67,6 +67,19 @@ object YoutubeRepository {
             .map { it.toVideoResult() }
     }
 
+        /** সম্পর্কিত ভিডিও — বর্তমান ভিডিওর পেজ থেকেই আসে */
+    suspend fun getRelated(videoUrl: String): List<VideoResult> = withContext(Dispatchers.IO) {
+        ensureInit()
+        try {
+            val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+            info.relatedItems
+                .filterIsInstance<StreamInfoItem>()
+                .map { it.toVideoResult() }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     suspend fun getPlayableStream(videoUrl: String): PlayableStream = withContext(Dispatchers.IO) {
         ensureInit()
         val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
