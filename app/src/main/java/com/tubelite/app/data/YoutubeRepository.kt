@@ -15,12 +15,18 @@ data class VideoResult(
     val durationSeconds: Long
 )
 
-data class PlayableStream(
-    val title: String,
+data class QualityOption(
+    val label: String,
     val progressiveUrl: String?,
     val videoOnlyUrl: String?,
     val audioOnlyUrl: String?,
-    val hlsUrl: String?,
+    val hlsUrl: String?
+)
+
+data class PlayableStream(
+    val title: String,
+    val default: QualityOption,
+    val options: List<QualityOption>,
     val thumbnailUrl: String?
 )
 
@@ -50,51 +56,43 @@ object YoutubeRepository {
         extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
     }
 
-    /** YouTube-এর হোম ফিডের মতো ট্রেন্ডিং ভিডিওর তালিকা */
+    /** ট্রেন্ডিং ভিডিও — লাইভ/প্রিমিয়ার বাদ দেওয়া হয় কারণ সেগুলো প্রায়ই প্লে-ব্যাক ফেইল করে */
     suspend fun getTrending(): List<VideoResult> = withContext(Dispatchers.IO) {
         ensureInit()
         val kioskList = ServiceList.YouTube.kioskList
         val extractor = kioskList.getDefaultKioskExtractor()
         extractor.fetchPage()
-        extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
+        extractor.initialPage.items.filterIsInstance<StreamInfoItem>()
+            .filter { it.duration > 0 }
+            .map { it.toVideoResult() }
     }
 
-    /**
-     * Extracts a playable, ad-free stream. Tries progressive (video+audio combined) first;
-     * if YouTube only offers separate DASH video-only/audio-only tracks (very common today),
-     * returns both so the player can merge them; falls back to HLS as a last resort.
-     */
     suspend fun getPlayableStream(videoUrl: String): PlayableStream = withContext(Dispatchers.IO) {
         ensureInit()
         val info = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
         val thumb = info.thumbnails.firstOrNull()?.url
 
-        val progressive = info.videoStreams
+        val progressiveOptions = info.videoStreams
             ?.filter { !it.isVideoOnly && it.content != null }
-            ?.maxByOrNull { it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 0 }
+            ?.sortedByDescending { it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 0 }
+            ?.map { QualityOption(it.getResolution() ?: "Auto", it.content, null, null, null) }
+            ?: emptyList()
 
-        if (progressive != null) {
-            return@withContext PlayableStream(info.name, progressive.content, null, null, null, thumb)
-        }
+        val bestAudio = info.audioStreams?.filter { it.content != null }?.maxByOrNull { it.averageBitrate }
 
-        val bestVideoOnly = info.videoOnlyStreams
-            ?.filter { it.content != null }
-            ?.maxByOrNull { it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 0 }
-        val bestAudio = info.audioStreams
-            ?.filter { it.content != null }
-            ?.maxByOrNull { it.averageBitrate }
+        val videoOnlyOptions = if (bestAudio != null) {
+            info.videoOnlyStreams
+                ?.filter { it.content != null }
+                ?.sortedByDescending { it.getResolution()?.replace("p", "")?.toIntOrNull() ?: 0 }
+                ?.map { QualityOption(it.getResolution() ?: "Auto", null, it.content, bestAudio.content, null) }
+                ?: emptyList()
+        } else emptyList()
 
-        if (bestVideoOnly != null && bestAudio != null) {
-            return@withContext PlayableStream(
-                info.name, null, bestVideoOnly.content, bestAudio.content, null, thumb
-            )
-        }
+        val hlsOptions = info.hlsUrl?.let { listOf(QualityOption("Auto (Live)", null, null, null, it)) } ?: emptyList()
 
-        val hls = info.hlsUrl
-        if (hls != null) {
-            return@withContext PlayableStream(info.name, null, null, null, hls, thumb)
-        }
+        val allOptions = (progressiveOptions + videoOnlyOptions).distinctBy { it.label }.ifEmpty { hlsOptions }
+        if (allOptions.isEmpty()) error("Could not get any stream")
 
-        error("Could not get any stream")
+        PlayableStream(info.name, allOptions.first(), allOptions, thumb)
     }
 }
