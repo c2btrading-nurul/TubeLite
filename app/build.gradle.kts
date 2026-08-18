@@ -23,6 +23,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -60,9 +61,13 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.media3:media3-datasource:1.4.1")
 
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.0")
+    // NewPipeExtractor — updated to latest so YouTube's frequent backend changes don't break extraction
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.4")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 }
