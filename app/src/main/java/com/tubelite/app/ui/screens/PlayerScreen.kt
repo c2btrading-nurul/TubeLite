@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -298,7 +299,10 @@ fun PlayerScreen(
             }
 
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-                AnimatedVisibility(visible = controlsVisible) {
+                // Explicitly qualified to avoid resolving to the ColumnScope.AnimatedVisibility
+                // extension (from the outer Column's implicit receiver) instead of the
+                // plain top-level composable.
+                androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Row(Modifier.padding(end = 6.dp)) {
                         if (isFullscreen) {
                             IconButton(onClick = { zoomFill = !zoomFill }) {
