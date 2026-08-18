@@ -23,6 +23,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.service.PlaybackService
 import com.tubelite.app.ui.screens.HomeScreen
+import com.tubelite.app.ui.screens.MiniPlayerBar
 import com.tubelite.app.ui.screens.PlayerScreen
 import com.tubelite.app.ui.screens.SearchScreen
 import com.tubelite.app.ui.theme.TubeLiteTheme
@@ -60,16 +61,23 @@ private fun AppRoot() {
         }
     }
 
-    var selectedVideo by remember { mutableStateOf<VideoResult?>(null) }
+    var nowPlaying by remember { mutableStateOf<VideoResult?>(null) }
+    var playerExpanded by remember { mutableStateOf(false) }
     var autoPlay by remember { mutableStateOf(true) }
     var showSearch by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
 
+    fun playVideo(v: VideoResult) {
+        nowPlaying = v
+        playerExpanded = true
+        showSearch = false
+    }
+
     BackHandler(enabled = true) {
         when {
             isFullscreen -> isFullscreen = false
-            selectedVideo != null -> selectedVideo = null
+            playerExpanded -> playerExpanded = false // collapse to mini-player, keep playing
             showSearch -> showSearch = false
             controller?.isPlaying == true -> showExitConfirm = true
             else -> activity?.finish()
@@ -90,6 +98,7 @@ private fun AppRoot() {
             dismissButton = {
                 TextButton(onClick = {
                     controller?.stop()
+                    nowPlaying = null
                     showExitConfirm = false
                     activity?.finish()
                 }) { Text("বন্ধ করুন") }
@@ -124,30 +133,40 @@ private fun AppRoot() {
             )
         }
 
-        val video = selectedVideo
-        if (video != null) {
+        val video = nowPlaying
+        if (playerExpanded && video != null) {
             PlayerScreen(
                 video = video,
                 controller = controller,
                 autoPlayEnabled = autoPlay,
                 isFullscreen = isFullscreen,
-                onFullscreenChange = { isFullscreen = it }
+                onFullscreenChange = { isFullscreen = it },
+                onRelatedSelected = { playVideo(it) }
             )
             if (!isFullscreen) {
-                TextButton(onClick = { selectedVideo = null }) { Text("← হোমে ফিরুন") }
+                TextButton(onClick = { playerExpanded = false }) { Text("← হোমে যান (প্লে চলবে)") }
             }
         }
 
-        if (!isFullscreen) {
-            Box(Modifier.fillMaxSize()) {
+        if (!isFullscreen && !playerExpanded) {
+            Box(Modifier.fillMaxSize().weight(1f)) {
                 if (showSearch) {
-                    SearchScreen(onVideoSelected = {
-                        selectedVideo = it
-                        showSearch = false
-                    })
-                } else if (video == null) {
-                    HomeScreen(onVideoSelected = { selectedVideo = it })
+                    SearchScreen(onVideoSelected = { playVideo(it) })
+                } else {
+                    HomeScreen(onVideoSelected = { playVideo(it) })
                 }
+            }
+
+            if (video != null) {
+                MiniPlayerBar(
+                    video = video,
+                    controller = controller,
+                    onExpand = { playerExpanded = true },
+                    onClose = {
+                        controller?.stop()
+                        nowPlaying = null
+                    }
+                )
             }
         }
     }
