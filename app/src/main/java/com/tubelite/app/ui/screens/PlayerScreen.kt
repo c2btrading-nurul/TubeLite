@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -146,6 +148,9 @@ fun PlayerScreen(
     onPrepared: (String) -> Unit,
     hasPrevious: Boolean,
     onPrevious: () -> Unit,
+    hasNext: Boolean,
+    onNext: () -> Unit,
+    queueNextVideo: VideoResult?,
     onFullscreenChange: (Boolean) -> Unit,
     onRelatedSelected: (VideoResult) -> Unit
 ) {
@@ -213,6 +218,7 @@ fun PlayerScreen(
             selectedSpeed = 1f
 
             NowPlayingStore.save(context, video)
+            com.tubelite.app.data.WatchHistoryStore.add(context, video)
             onPrepared(video.url)
         } catch (e: Exception) {
             error = "স্ট্রিম লোড করা যায়নি: ${e.message}"
@@ -228,7 +234,8 @@ fun PlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && autoPlayEnabled) {
-                    related.firstOrNull()?.let { onRelatedSelected(it) }
+                    val next = queueNextVideo ?: related.firstOrNull()
+                    next?.let { onRelatedSelected(it) }
                 }
             }
         }
@@ -515,6 +522,33 @@ fun PlayerScreen(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
         )
 
+        var saveMenuOpen by remember { mutableStateOf(false) }
+        var showNewPlaylistDialog by remember { mutableStateOf(false) }
+        var newPlaylistName by remember { mutableStateOf("") }
+
+        if (showNewPlaylistDialog) {
+            AlertDialog(
+                onDismissRequest = { showNewPlaylistDialog = false },
+                title = { Text("নতুন প্লে-লিস্ট") },
+                text = {
+                    OutlinedTextField(value = newPlaylistName, onValueChange = { newPlaylistName = it }, placeholder = { Text("নাম") })
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val n = newPlaylistName.trim()
+                        if (n.isNotEmpty()) {
+                            com.tubelite.app.data.PlaylistStore.createPlaylist(context, n)
+                            com.tubelite.app.data.PlaylistStore.addVideo(context, n, video)
+                            Toast.makeText(context, "\"$n\"-এ যোগ হলো", Toast.LENGTH_SHORT).show()
+                        }
+                        newPlaylistName = ""
+                        showNewPlaylistDialog = false
+                    }) { Text("তৈরি ও যোগ করুন") }
+                },
+                dismissButton = { TextButton(onClick = { showNewPlaylistDialog = false }) { Text("বাতিল") } }
+            )
+        }
+
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -522,8 +556,11 @@ fun PlayerScreen(
             if (hasPrevious) {
                 OutlinedButton(onClick = onPrevious) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = null)
-                    Spacer(Modifier.width(4.dp))
-                    Text("আগেরটা")
+                }
+            }
+            if (hasNext) {
+                OutlinedButton(onClick = onNext) {
+                    Icon(Icons.Default.SkipNext, contentDescription = null)
                 }
             }
             Button(onClick = {
@@ -537,8 +574,25 @@ fun PlayerScreen(
                 }
             }) {
                 Icon(Icons.Default.Download, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("ডাউনলোড")
+            }
+            Box {
+                OutlinedButton(onClick = { saveMenuOpen = true }) {
+                    Icon(Icons.Default.PlaylistAdd, contentDescription = null)
+                }
+                DropdownMenu(expanded = saveMenuOpen, onDismissRequest = { saveMenuOpen = false }) {
+                    com.tubelite.app.data.PlaylistStore.getPlaylistNames(context).forEach { name ->
+                        DropdownMenuItem(text = { Text(name) }, onClick = {
+                            com.tubelite.app.data.PlaylistStore.addVideo(context, name, video)
+                            saveMenuOpen = false
+                            Toast.makeText(context, "\"$name\"-এ যোগ হলো", Toast.LENGTH_SHORT).show()
+                        })
+                    }
+                    Divider()
+                    DropdownMenuItem(text = { Text("+ নতুন প্লে-লিস্ট") }, onClick = {
+                        saveMenuOpen = false
+                        showNewPlaylistDialog = true
+                    })
+                }
             }
         }
 
