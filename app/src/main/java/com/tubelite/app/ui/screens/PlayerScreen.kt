@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.*
@@ -176,6 +178,15 @@ fun PlayerScreen(
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var zoomFill by remember { mutableStateOf(false) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
+
+    var isPlaying by remember { mutableStateOf(controller?.isPlaying == true) }
+    DisposableEffect(controller) {
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+        }
+        controller?.addListener(listener)
+        onDispose { controller?.removeListener(listener) }
+    }
 
     fun effectiveQuality(q: QualityOption): QualityOption =
         if (q.videoOnlyUrl != null && selectedAudioUrl != null) q.copy(audioOnlyUrl = selectedAudioUrl) else q
@@ -551,19 +562,10 @@ fun PlayerScreen(
 
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (hasPrevious) {
-                OutlinedButton(onClick = onPrevious) {
-                    Icon(Icons.Default.SkipPrevious, contentDescription = null)
-                }
-            }
-            if (hasNext) {
-                OutlinedButton(onClick = onNext) {
-                    Icon(Icons.Default.SkipNext, contentDescription = null)
-                }
-            }
-            Button(onClick = {
+            IconButton(onClick = {
                 val q = selectedQuality
                 val url = q?.progressiveUrl ?: q?.videoOnlyUrl
                 if (url != null) {
@@ -573,11 +575,32 @@ fun PlayerScreen(
                     Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                 }
             }) {
-                Icon(Icons.Default.Download, contentDescription = null)
+                Icon(Icons.Default.Download, contentDescription = "Download")
             }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hasPrevious) {
+                    IconButton(onClick = onPrevious) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous")
+                    }
+                }
+                IconButton(onClick = { if (isPlaying) controller?.pause() else controller?.play() }) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Play/Pause",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                if (hasNext) {
+                    IconButton(onClick = onNext) {
+                        Icon(Icons.Default.SkipNext, contentDescription = "Next")
+                    }
+                }
+            }
+
             Box {
-                OutlinedButton(onClick = { saveMenuOpen = true }) {
-                    Icon(Icons.Default.PlaylistAdd, contentDescription = null)
+                IconButton(onClick = { saveMenuOpen = true }) {
+                    Icon(Icons.Default.PlaylistAdd, contentDescription = "Add to playlist")
                 }
                 DropdownMenu(expanded = saveMenuOpen, onDismissRequest = { saveMenuOpen = false }) {
                     com.tubelite.app.data.PlaylistStore.getPlaylistNames(context).forEach { name ->
