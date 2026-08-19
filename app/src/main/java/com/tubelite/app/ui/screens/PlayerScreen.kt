@@ -87,12 +87,22 @@ private suspend fun <T> retryIO(
     return block() // শেষ চেষ্টা — এখনো ফেল করলে exception caller-এর কাছে যাবে
 }
 
-/** টাচ ইভেন্ট গিলে ফেলে না — শুধু ডাবল-ট্যাপ শনাক্ত করে, বাকি সব স্বাভাবিকভাবে PlayerView-তে পৌঁছায় */
+/** টাচ ইভেন্ট গিলে ফেলে না — শুধু সিঙ্গেল-ট্যাপ (confirmed, ডাবল-ট্যাপের অংশ না হলে) আর ডাবল-ট্যাপ শনাক্ত করে, বাকি সব স্বাভাবিকভাবে PlayerView-তে পৌঁছায় */
 private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayout(context) {
     var onDoubleTapLeft: (() -> Unit)? = null
     var onDoubleTapRight: (() -> Unit)? = null
+    var onSingleTapConfirmedAction: (() -> Unit)? = null
 
     private val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent): Boolean = true
+
+        // এটা তখনই কল হয় যখন Android নিশ্চিত হয় যে এটা ডাবল-ট্যাপের অংশ না —
+        // তাই ডাবল-ট্যাপ করলে এই মেথড আর কল হয় না, ফলে কন্ট্রোলার টগল হবে না
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            onSingleTapConfirmedAction?.invoke()
+            return true
+        }
+
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (e.x > width / 2f) onDoubleTapRight?.invoke() else onDoubleTapLeft?.invoke()
             return true
@@ -101,7 +111,7 @@ private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayo
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         detector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev) // সবসময় নিচের PlayerView-তে পাস করে দেওয়া হয়
+        return super.dispatchTouchEvent(ev) // সবসময় নিচের PlayerView-তে পাস করে দেওয়া হয় (বাটন/সিকবার কাজ করার জন্য)
     }
 }
 
@@ -348,8 +358,13 @@ fun PlayerScreen(
                                     controlsVisible = visibility == View.VISIBLE
                                 }
                             )
+                            // PlayerView-এর নিজস্ব বিল্ট-ইন ট্যাপ-টু-টগল ক্লিক লিসেনার বাতিল করা হচ্ছে,
+                            // কারণ এটা ডাবল-ট্যাপের প্রতিটা ট্যাপকেও আলাদাভাবে টগল হিসেবে ধরে নেয়।
+                            // এখন থেকে নিচের DoubleTapSeekOverlay-ই একমাত্র জায়গা যেখান থেকে
+                            // কন্ট্রোলার show/hide নিয়ন্ত্রণ হবে (শুধু কনফার্মড সিঙ্গেল-ট্যাপে)।
+                            setOnClickListener {}
                         }
-                        
+
                         DoubleTapSeekOverlay(ctx).apply {
                             addView(
                                 playerView,
@@ -375,6 +390,9 @@ fun PlayerScreen(
                                 c.seekTo(c.currentPosition + SEEK_STEP_MS)
                                 seekFeedback = "+১০ সেকেন্ড"
                             }
+                        }
+                        container.onSingleTapConfirmedAction = {
+                            if (controlsVisible) playerView.hideController() else playerView.showController()
                         }
                     }
                 )
