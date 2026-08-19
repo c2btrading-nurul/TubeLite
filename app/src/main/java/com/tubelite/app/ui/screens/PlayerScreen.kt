@@ -123,6 +123,8 @@ fun PlayerScreen(
     controller: MediaController?,
     autoPlayEnabled: Boolean,
     isFullscreen: Boolean,
+    alreadyPrepared: Boolean,
+    onPrepared: (String) -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onRelatedSelected: (VideoResult) -> Unit
 ) {
