@@ -28,11 +28,18 @@ data class AudioOption(
     val url: String
 )
 
+data class SubtitleOption(
+    val label: String,
+    val url: String,
+    val mimeType: String
+)
+
 data class PlayableStream(
     val title: String,
     val default: QualityOption,
     val options: List<QualityOption>,
     val audioOptions: List<AudioOption>,
+    val subtitleOptions: List<SubtitleOption>,
     val thumbnailUrl: String?
 )
 
@@ -113,10 +120,22 @@ object YoutubeRepository {
             .distinctBy { it.averageBitrate }
             .sortedByDescending { it.averageBitrate }
             .mapIndexed { i, a ->
-                val kbps = if (a.averageBitrate > 0) "${a.averageBitrate / 1000}kbps" else "অডিও ${i + 1}"
+                val kbps = if (a.averageBitrate > 0) "${a.averageBitrate / 1000}kbps" else "Audio ${i + 1}"
                 AudioOption(kbps, a.content)
             }
 
-        PlayableStream(info.name, allOptions.first(), allOptions, audioOptions, thumb)
+        val subtitleOptions = try {
+            info.subtitles
+                ?.filter { it.url != null }
+                ?.map { s ->
+                    val lang = s.languageTag ?: "Subtitle"
+                    val mime = s.format?.mimeType ?: "text/vtt"
+                    SubtitleOption(lang, s.url!!, mime)
+                } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+        PlayableStream(info.name, allOptions.first(), allOptions, audioOptions, subtitleOptions, thumb)
     }
 }
