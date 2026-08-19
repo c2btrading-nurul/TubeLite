@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -383,6 +384,23 @@ fun PlayerScreen(
                 }
             }
 
+            if (isFullscreen) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+                    androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
+                        IconButton(
+                            onClick = { zoomFill = !zoomFill },
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.AspectRatio,
+                                contentDescription = "Fit / Fill screen",
+                                tint = if (zoomFill) MaterialTheme.colorScheme.primary else Color.White
+                            )
+                        }
+                    }
+                }
+            }            
+            
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
                 androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Row(Modifier.padding(6.dp)) {
@@ -477,22 +495,6 @@ fun PlayerScreen(
                                             onClick = { setSleepTimer(m); settingsOpen = false; expandedSection = null }
                                         )
                                     }
-                                }
-                                Divider()
-                                SettingsAccordionRow(
-                                    label = "Fill Screen",
-                                    value = if (zoomFill) "On" else "Off",
-                                    expanded = expandedSection == "fill",
-                                    onHeaderClick = { expandedSection = if (expandedSection == "fill") null else "fill" }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text((if (!zoomFill) "✓ " else "   ") + "Off (fit)") },
-                                        onClick = { zoomFill = false; settingsOpen = false; expandedSection = null }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text((if (zoomFill) "✓ " else "   ") + "On (crop to fill)") },
-                                        onClick = { zoomFill = true; settingsOpen = false; expandedSection = null }
-                                    )
                                 }
                             }
                         }
