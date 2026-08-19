@@ -58,40 +58,25 @@ private fun AppRoot() {
     var showSearch by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+    var preparedUrl by remember { mutableStateOf<String?>(null) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
 
-        DisposableEffect(Unit) {
+    DisposableEffect(Unit) {
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
         controllerFuture.addListener({
             val c = controllerFuture.get()
-
-            // যদি connect হওয়ার মুহূর্তে state এখনো sync না হয়ে থাকে, পরবর্তী যেকোনো
-            // player event-এ আবার চেষ্টা করা হচ্ছে — এতে ব্যাকগ্রাউন্ড থেকে মিনি-প্লেয়ার
-            // ফিরে আসার নির্ভরযোগ্যতা বাড়বে
-            c.addListener(object : Player.Listener {
-                override fun onEvents(player: Player, events: Player.Events) {
-                    if (nowPlaying == null) {
-                        val item = player.currentMediaItem
-                        val mediaId = item?.mediaId
-                        if (item != null && !mediaId.isNullOrBlank() && player.mediaItemCount > 0) {
-                            val meta = item.mediaMetadata
-                            val durationMs = player.duration
-                            nowPlaying = VideoResult(
-                                title = meta.title?.toString() ?: "",
-                                url = mediaId,
-                                uploaderName = meta.artist?.toString() ?: "",
-                                thumbnailUrl = meta.artworkUri?.toString(),
-                                durationSeconds = if (durationMs != C.TIME_UNSET) durationMs / 1000 else 0L
-                            )
-                            playerExpanded = false
-                        }
-                    }
-                }
-            })
-
             controller = c
+
+            if (nowPlaying == null && c.mediaItemCount > 0) {
+                val restored = com.tubelite.app.data.NowPlayingStore.load(context)
+                if (restored != null) {
+                    nowPlaying = restored
+                    preparedUrl = restored.url
+                    playerExpanded = false
+                }
+            }
         }, MoreExecutors.directExecutor())
         onDispose {
             MediaController.releaseFuture(controllerFuture)
@@ -99,6 +84,9 @@ private fun AppRoot() {
     }
 
     fun playVideo(v: VideoResult) {
+        if (v.url != nowPlaying?.url) {
+            preparedUrl = null // নতুন ভিডিও — PlayerScreen-কে reload করতে বলা হচ্ছে
+        }
         nowPlaying = v
         playerExpanded = true
         showSearch = false
@@ -129,6 +117,8 @@ private fun AppRoot() {
                 TextButton(onClick = {
                     controller?.stop()
                     nowPlaying = null
+                    preparedUrl = null
+                    com.tubelite.app.data.NowPlayingStore.clear(context)
                     showExitConfirm = false
                     activity?.finish()
                 }) { Text("বন্ধ করুন") }
@@ -170,6 +160,8 @@ private fun AppRoot() {
                 controller = controller,
                 autoPlayEnabled = autoPlay,
                 isFullscreen = isFullscreen,
+                alreadyPrepared = preparedUrl == video.url,
+                onPrepared = { preparedUrl = it },
                 onFullscreenChange = { isFullscreen = it },
                 onRelatedSelected = { playVideo(it) }
             )
@@ -195,6 +187,8 @@ private fun AppRoot() {
                     onClose = {
                         controller?.stop()
                         nowPlaying = null
+                        preparedUrl = null
+                        com.tubelite.app.data.NowPlayingStore.clear(context)
                     }
                 )
             }
