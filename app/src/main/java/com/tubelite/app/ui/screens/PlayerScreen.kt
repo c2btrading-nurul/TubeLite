@@ -18,14 +18,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,6 +45,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.tubelite.app.data.AudioOption
+import com.tubelite.app.data.NowPlayingStore
 import com.tubelite.app.data.PlayableStream
 import com.tubelite.app.data.QualityOption
 import com.tubelite.app.data.SubtitleOption
@@ -62,44 +60,22 @@ import kotlinx.coroutines.launch
 private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private val SLEEP_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
 private const val SEEK_STEP_MS = 10_000L
+private const val CONTROLLER_SHOW_MS = 3500
 
 /**
- * নেটওয়ার্ক-সম্পর্কিত সাময়িক (transient) এরর — যেমন ব্যাকগ্রাউন্ডে DNS/হোস্ট রিজলভ
- * ফেইল হওয়া ("Unable to resolve host ...") — হলে অল্প বিরতি দিয়ে কয়েকবার আবার চেষ্টা
- * করা হয়, যাতে ক্ষণস্থায়ী নেটওয়ার্ক থ্রটলিং/হ্যান্ডওভারে ভিডিও লোড না হওয়াটা এড়ানো যায়।
+ * টাচ ইভেন্ট নিজে প্রসেস করে single/double tap আলাদা করে, কিন্তু কন্ট্রোলার দেখা অবস্থায়
+ * PlayerView-এর নিজস্ব বাটন/সিকবার কাজ করার জন্য টাচ ফরওয়ার্ড করে দেয়। কন্ট্রোলার হাইড
+ * থাকা অবস্থায় টাচ আটকে রাখে, যাতে PlayerView নিজে থেকে toggle করতে না পারে।
  */
-private suspend fun <T> retryIO(
-    times: Int = 3,
-    initialDelayMs: Long = 1000L,
-    factor: Double = 2.0,
-    block: suspend () -> T
-): T {
-    var currentDelay = initialDelayMs
-    repeat(times - 1) {
-        try {
-            return block()
-        } catch (e: java.io.IOException) {
-            // UnknownHostException সহ সব IOException — নেটওয়ার্ক ফিরে আসার অপেক্ষায় আবার চেষ্টা
-        }
-        delay(currentDelay)
-        currentDelay = (currentDelay * factor).toLong()
-    }
-    return block() // শেষ চেষ্টা — এখনো ফেল করলে exception caller-এর কাছে যাবে
-}
-
-/** টাচ ইভেন্ট গিলে ফেলে না — শুধু সিঙ্গেল-ট্যাপ (confirmed, ডাবল-ট্যাপের অংশ না হলে) আর ডাবল-ট্যাপ শনাক্ত করে, বাকি সব স্বাভাবিকভাবে PlayerView-তে পৌঁছায় */
 private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayout(context) {
     var onDoubleTapLeft: (() -> Unit)? = null
     var onDoubleTapRight: (() -> Unit)? = null
-    var onSingleTapConfirmedAction: (() -> Unit)? = null
+    var onConfirmedSingleTap: (() -> Unit)? = null
+    var isControllerVisible: () -> Boolean = { false }
 
     private val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean = true
-
-        // এটা তখনই কল হয় যখন Android নিশ্চিত হয় যে এটা ডাবল-ট্যাপের অংশ না —
-        // তাই ডাবল-ট্যাপ করলে এই মেথড আর কল হয় না, ফলে কন্ট্রোলার টগল হবে না
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-            onSingleTapConfirmedAction?.invoke()
+            onConfirmedSingleTap?.invoke()
             return true
         }
 
@@ -111,7 +87,11 @@ private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayo
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         detector.onTouchEvent(ev)
-        return super.dispatchTouchEvent(ev) // সবসময় নিচের PlayerView-তে পাস করে দেওয়া হয় (বাটন/সিকবার কাজ করার জন্য)
+        return if (isControllerVisible()) {
+            super.dispatchTouchEvent(ev) // বাটন/সিকবার কাজ করার জন্য স্বাভাবিকভাবে পাস
+        } else {
+            true // কন্ট্রোলার হাইড থাকলে PlayerView-কে টাচ দেওয়া হচ্ছে না
+        }
     }
 }
 
@@ -163,8 +143,8 @@ fun PlayerScreen(
     isFullscreen: Boolean,
     alreadyPrepared: Boolean,
     onPrepared: (String) -> Unit,
-    hasPrevious: Boolean = false,
-    onPrevious: () -> Unit = {},
+    hasPrevious: Boolean,
+    onPrevious: () -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
     onRelatedSelected: (VideoResult) -> Unit
 ) {
@@ -190,7 +170,6 @@ fun PlayerScreen(
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var zoomFill by remember { mutableStateOf(false) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
-    var retryTrigger by remember { mutableStateOf(0) }
 
     fun effectiveQuality(q: QualityOption): QualityOption =
         if (q.videoOnlyUrl != null && selectedAudioUrl != null) q.copy(audioOnlyUrl = selectedAudioUrl) else q
@@ -198,23 +177,19 @@ fun PlayerScreen(
     fun currentMediaItem(q: QualityOption) =
         buildMediaItem(video.url, streamTitle, video.uploaderName, video.thumbnailUrl, effectiveQuality(q), selectedSubtitle)
 
-    LaunchedEffect(video.url, controller, retryTrigger) {
+    LaunchedEffect(video.url, controller) {
         if (controller == null) return@LaunchedEffect
 
         if (alreadyPrepared) {
-            // এই ভিডিওটা আমাদের নিজস্ব অ্যাপ-স্টেট অনুযায়ী already prepare করা —
-            // playback/position স্পর্শ না করে শুধু UI সিঙ্ক করা হচ্ছে
             loading = false
             try {
-                val playable = retryIO { YoutubeRepository.getPlayableStream(video.url) }
+                val playable = YoutubeRepository.getPlayableStream(video.url)
                 qualities = playable.options
                 audioOptions = playable.audioOptions
                 subtitleOptions = playable.subtitleOptions
                 selectedQuality = playable.options.firstOrNull { it.label == selectedQuality?.label } ?: playable.default
             } catch (_: Exception) { }
-            try {
-                related = YoutubeRepository.getRelated(video.url)
-            } catch (_: Exception) { }
+            related = YoutubeRepository.getRelated(video.url)
             return@LaunchedEffect
         }
 
@@ -223,10 +198,7 @@ fun PlayerScreen(
         selectedAudioUrl = null
         selectedSubtitle = null
         try {
-            // "youtubei.googleapis.com" হোস্ট রিজলভ ফেইল করার মতো সাময়িক নেটওয়ার্ক এরর
-            // (ব্যাকগ্রাউন্ড থ্রটলিং, Wi-Fi/ডেটা হ্যান্ডওভার) হলে এখানে কয়েকবার আবার
-            // চেষ্টা করা হচ্ছে, যাতে পরের ভিডিও অটো-প্লে না হয়ে থেমে না যায়।
-            val playable: PlayableStream = retryIO { YoutubeRepository.getPlayableStream(video.url) }
+            val playable: PlayableStream = YoutubeRepository.getPlayableStream(video.url)
             streamTitle = playable.title
             qualities = playable.options
             audioOptions = playable.audioOptions
@@ -239,21 +211,15 @@ fun PlayerScreen(
             controller.setPlaybackParameters(PlaybackParameters(1f))
             selectedSpeed = 1f
 
-            com.tubelite.app.data.NowPlayingStore.save(context, video)
+            NowPlayingStore.save(context, video)
             onPrepared(video.url)
         } catch (e: Exception) {
-            error = when (e) {
-                is java.net.UnknownHostException ->
-                    "ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না। সংযোগ ঠিক আছে কিনা দেখে আবার চেষ্টা করুন।"
-                else -> "স্ট্রিম লোড করা যায়নি: ${e.message}"
-            }
+            error = "স্ট্রিম লোড করা যায়নি: ${e.message}"
         } finally {
             loading = false
         }
 
-        try {
-            related = YoutubeRepository.getRelated(video.url)
-        } catch (_: Exception) { }
+        related = YoutubeRepository.getRelated(video.url)
     }
 
     DisposableEffect(controller, related, autoPlayEnabled) {
@@ -353,18 +319,15 @@ fun PlayerScreen(
                             player = controller
                             useController = true
                             keepScreenOn = true
+                            controllerHideOnTouch = false
+                            controllerShowTimeoutMs = CONTROLLER_SHOW_MS
+                            setOnClickListener { } // নেটিভ tap-to-toggle নিষ্ক্রিয় করা হচ্ছে
                             setControllerVisibilityListener(
                                 PlayerView.ControllerVisibilityListener { visibility ->
                                     controlsVisible = visibility == View.VISIBLE
                                 }
                             )
-                            // PlayerView-এর নিজস্ব বিল্ট-ইন ট্যাপ-টু-টগল ক্লিক লিসেনার বাতিল করা হচ্ছে,
-                            // কারণ এটা ডাবল-ট্যাপের প্রতিটা ট্যাপকেও আলাদাভাবে টগল হিসেবে ধরে নেয়।
-                            // এখন থেকে নিচের DoubleTapSeekOverlay-ই একমাত্র জায়গা যেখান থেকে
-                            // কন্ট্রোলার show/hide নিয়ন্ত্রণ হবে (শুধু কনফার্মড সিঙ্গেল-ট্যাপে)।
-                            setOnClickListener {}
                         }
-
                         DoubleTapSeekOverlay(ctx).apply {
                             addView(
                                 playerView,
@@ -377,6 +340,12 @@ fun PlayerScreen(
                         val playerView = container.getChildAt(0) as PlayerView
                         playerView.resizeMode = if (zoomFill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
                         playerView.findViewById<View>(androidx.media3.ui.R.id.exo_settings)?.visibility = View.GONE
+
+                        container.isControllerVisible = { controlsVisible }
+
+                        container.onConfirmedSingleTap = {
+                            if (playerView.isControllerFullyVisible) playerView.hideController() else playerView.showController()
+                        }
                         container.onDoubleTapLeft = {
                             val c = controller
                             if (c != null) {
@@ -390,9 +359,6 @@ fun PlayerScreen(
                                 c.seekTo(c.currentPosition + SEEK_STEP_MS)
                                 seekFeedback = "+১০ সেকেন্ড"
                             }
-                        }
-                        container.onSingleTapConfirmedAction = {
-                            if (controlsVisible) playerView.hideController() else playerView.showController()
                         }
                     }
                 )
@@ -417,7 +383,6 @@ fun PlayerScreen(
                 }
             }
 
-            // উপরে-ডানে: ফুলস্ক্রিন + সাবটাইটেল (CC)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
                 androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Row(Modifier.padding(6.dp)) {
@@ -443,25 +408,6 @@ fun PlayerScreen(
                 }
             }
 
-            // ডান পাশে-মাঝখানে: শুধু ফুলস্ক্রিন অবস্থায় — Fill/Fit to screen টগল
-            if (isFullscreen) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-                    androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
-                        IconButton(
-                            onClick = { zoomFill = !zoomFill },
-                            modifier = Modifier.padding(end = 6.dp)
-                        ) {
-                            Icon(
-                                if (zoomFill) Icons.Default.FitScreen else Icons.Default.AspectRatio,
-                                contentDescription = if (zoomFill) "Fit to screen" else "Fill screen",
-                                tint = Color.White
-                            )
-                        }
-                    }
-                }
-            }
-
-            // নিচে-ডানে: সেটিংস (কোয়ালিটি, স্পিড, অডিও, স্লিপ টাইমার)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
                 androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Box {
@@ -532,6 +478,22 @@ fun PlayerScreen(
                                         )
                                     }
                                 }
+                                Divider()
+                                SettingsAccordionRow(
+                                    label = "Fill Screen",
+                                    value = if (zoomFill) "On" else "Off",
+                                    expanded = expandedSection == "fill",
+                                    onHeaderClick = { expandedSection = if (expandedSection == "fill") null else "fill" }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text((if (!zoomFill) "✓ " else "   ") + "Off (fit)") },
+                                        onClick = { zoomFill = false; settingsOpen = false; expandedSection = null }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text((if (zoomFill) "✓ " else "   ") + "On (crop to fill)") },
+                                        onClick = { zoomFill = true; settingsOpen = false; expandedSection = null }
+                                    )
+                                }
                             }
                         }
                     }
@@ -542,14 +504,7 @@ fun PlayerScreen(
         if (isFullscreen) return@Column
 
         error?.let {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                TextButton(onClick = { retryTrigger++ }) { Text("আবার চেষ্টা করুন") }
-            }
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
         }
 
         Text(
@@ -562,6 +517,13 @@ fun PlayerScreen(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (hasPrevious) {
+                OutlinedButton(onClick = onPrevious) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("আগেরটা")
+                }
+            }
             Button(onClick = {
                 val q = selectedQuality
                 val url = q?.progressiveUrl ?: q?.videoOnlyUrl
@@ -575,20 +537,6 @@ fun PlayerScreen(
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("ডাউনলোড")
-            }
-
-            OutlinedButton(
-                onClick = onPrevious,
-                enabled = hasPrevious
-            ) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "পূর্ববর্তী ভিডিও")
-            }
-
-            OutlinedButton(
-                onClick = { related.firstOrNull()?.let { onRelatedSelected(it) } },
-                enabled = related.isNotEmpty()
-            ) {
-                Icon(Icons.Default.SkipNext, contentDescription = "পরবর্তী ভিডিও")
             }
         }
 
