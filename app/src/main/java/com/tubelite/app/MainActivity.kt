@@ -67,13 +67,6 @@ private fun AppRoot() {
         controllerFuture.addListener({
             val c = controllerFuture.get()
 
-            // ⚠️ সাময়িক ডায়াগনস্টিক — বাগ ধরার পর মুছে ফেলা হবে
-            android.widget.Toast.makeText(
-                context,
-                "DEBUG: connected | mediaId=${c.currentMediaItem?.mediaId?.takeLast(15)} | state=${c.playbackState} | isPlaying=${c.isPlaying} | itemCount=${c.mediaItemCount}",
-                android.widget.Toast.LENGTH_LONG
-            ).show()
-
             // যদি connect হওয়ার মুহূর্তে state এখনো sync না হয়ে থাকে, পরবর্তী যেকোনো
             // player event-এ আবার চেষ্টা করা হচ্ছে — এতে ব্যাকগ্রাউন্ড থেকে মিনি-প্লেয়ার
             // ফিরে আসার নির্ভরযোগ্যতা বাড়বে
