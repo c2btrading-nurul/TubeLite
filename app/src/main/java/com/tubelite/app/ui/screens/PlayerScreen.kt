@@ -160,11 +160,9 @@ fun PlayerScreen(
     LaunchedEffect(video.url, controller) {
         if (controller == null) return@LaunchedEffect
 
-        val alreadyLoaded = controller.currentMediaItem?.mediaId == video.url &&
-            controller.playbackState != Player.STATE_IDLE
-      
-        if (alreadyLoaded) {
-            streamTitle = controller.currentMediaItem?.mediaMetadata?.title?.toString() ?: video.title
+        if (alreadyPrepared) {
+            // এই ভিডিওটা আমাদের নিজস্ব অ্যাপ-স্টেট অনুযায়ী already prepare করা —
+            // playback/position স্পর্শ না করে শুধু UI সিঙ্ক করা হচ্ছে
             loading = false
             try {
                 val playable = YoutubeRepository.getPlayableStream(video.url)
@@ -194,6 +192,9 @@ fun PlayerScreen(
             controller.playWhenReady = autoPlayEnabled
             controller.setPlaybackParameters(PlaybackParameters(1f))
             selectedSpeed = 1f
+
+            com.tubelite.app.data.NowPlayingStore.save(context, video)
+            onPrepared(video.url)
         } catch (e: Exception) {
             error = "স্ট্রিম লোড করা যায়নি: ${e.message}"
         } finally {
