@@ -5,21 +5,26 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.media3.common.C
-import androidx.media3.common.Player
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -38,6 +43,9 @@ import com.tubelite.app.ui.screens.SettingsScreen
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
 private enum class BottomTab { HOME, HISTORY, SAVED, SETTINGS }
+
+private val TOP_BAR_HEIGHT = 52.dp
+private val BOTTOM_BAR_HEIGHT = 56.dp
 
 class MainActivity : ComponentActivity() {
 
@@ -87,7 +95,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         controllerFuture.addListener({
             val c = controllerFuture.get()
             controller = c
-
             if (nowPlaying == null && c.mediaItemCount > 0) {
                 val restored = NowPlayingStore.load(context)
                 if (restored != null) {
@@ -97,9 +104,20 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 }
             }
         }, MoreExecutors.directExecutor())
-        onDispose {
-            MediaController.releaseFuture(controllerFuture)
-        }
+        onDispose { MediaController.releaseFuture(controllerFuture) }
+    }
+
+    fun goHome() {
+        currentTab = BottomTab.HOME
+        showSearch = false
+        playerExpanded = false
+        isFullscreen = false
+    }
+
+    fun openSearch() {
+        playerExpanded = false
+        isFullscreen = false
+        showSearch = true
     }
 
     fun playVideo(v: VideoResult, addToHistory: Boolean = true) {
@@ -107,9 +125,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         if (addToHistory && current != null && current.url != v.url) {
             playHistory = playHistory + current
         }
-        if (v.url != nowPlaying?.url) {
-            preparedUrl = null
-        }
+        if (v.url != nowPlaying?.url) preparedUrl = null
         nowPlaying = v
         playerExpanded = true
         showSearch = false
@@ -150,10 +166,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             title = { Text("ব্যাকগ্রাউন্ডে চালু রাখবেন?") },
             text = { Text("ভিডিও/অডিও প্লে হচ্ছে। অ্যাপ বন্ধ করার পরও এটা চালু রাখতে চান?") },
             confirmButton = {
-                TextButton(onClick = {
-                    showExitConfirm = false
-                    activity?.finish()
-                }) { Text("ব্যাকগ্রাউন্ডে চালু রাখুন") }
+                TextButton(onClick = { showExitConfirm = false; activity?.finish() }) { Text("ব্যাকগ্রাউন্ডে চালু রাখুন") }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -168,60 +181,35 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        if (!isFullscreen) {
-            TopAppBar(
-                title = {
-                    val title = when {
-                        showSearch -> "সার্চ"
-                        currentTab == BottomTab.HOME -> "TubeLite"
-                        currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
-                        currentTab == BottomTab.SAVED -> "সেভ করা"
-                        else -> "সেটিংস"
-                    }
-                    Text(title, fontWeight = FontWeight.Bold)
-                },
-                navigationIcon = {
-                    if (showSearch) {
-                        IconButton(onClick = { showSearch = false }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
-                actions = {
-                    if (!showSearch && currentTab == BottomTab.HOME) {
-                        IconButton(onClick = { showSearch = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                    }
-                }
-            )
-        }
+    val video = nowPlaying
 
-        val video = nowPlaying
-        if (playerExpanded && video != null) {
-            PlayerScreen(
-                video = video,
-                controller = controller,
-                autoPlayEnabled = autoPlay,
-                isFullscreen = isFullscreen,
-                alreadyPrepared = preparedUrl == video.url,
-                onPrepared = { preparedUrl = it },
-                hasPrevious = playHistory.isNotEmpty(),
-                onPrevious = { playPrevious() },
-                hasNext = queueIndex in 0 until queue.lastIndex,
-                onNext = { playNextInQueue() },
-                queueNextVideo = queue.getOrNull(queueIndex + 1),
-                onFullscreenChange = { isFullscreen = it },
-                onRelatedSelected = { playVideo(it) }
-            )
-            if (!isFullscreen) {
-                TextButton(onClick = { playerExpanded = false }) { Text("← ফিরে যান (প্লে চলবে)") }
-            }
-        }
-
-        if (!isFullscreen && !playerExpanded) {
-            Box(Modifier.fillMaxSize().weight(1f)) {
+    Box(Modifier.fillMaxSize()) {
+        // ---- মূল কনটেন্ট (বার-গুলোর জন্য প্যাডিং রেখে, তাই স্ক্রল করার সময় সত্যিকারের glass effect দেখা যাবে) ----
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(
+                    top = if (isFullscreen) 0.dp else TOP_BAR_HEIGHT,
+                    bottom = if (isFullscreen) 0.dp else BOTTOM_BAR_HEIGHT
+                )
+        ) {
+            if (playerExpanded && video != null) {
+                PlayerScreen(
+                    video = video,
+                    controller = controller,
+                    autoPlayEnabled = autoPlay,
+                    isFullscreen = isFullscreen,
+                    alreadyPrepared = preparedUrl == video.url,
+                    onPrepared = { preparedUrl = it },
+                    hasPrevious = playHistory.isNotEmpty(),
+                    onPrevious = { playPrevious() },
+                    hasNext = queueIndex in 0 until queue.lastIndex,
+                    onNext = { playNextInQueue() },
+                    queueNextVideo = queue.getOrNull(queueIndex + 1),
+                    onFullscreenChange = { isFullscreen = it },
+                    onRelatedSelected = { playVideo(it) }
+                )
+            } else if (!isFullscreen) {
                 when {
                     showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
                     currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
@@ -238,47 +226,102 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     )
                 }
             }
+        }
 
-            if (video != null) {
-                MiniPlayerBar(
-                    video = video,
-                    controller = controller,
-                    onExpand = { playerExpanded = true },
-                    onClose = {
-                        controller?.stop()
-                        nowPlaying = null
-                        preparedUrl = null
-                        NowPlayingStore.clear(context)
+        // ---- টপ বার (ভাসমান, গ্লাসি) ----
+        if (!isFullscreen) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(TOP_BAR_HEIGHT)
+                    .align(Alignment.TopCenter)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                    .blur(18.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (showSearch) {
+                    IconButton(onClick = { showSearch = false }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
+                }
+                val title = when {
+                    showSearch -> "সার্চ"
+                    currentTab == BottomTab.HOME -> "TubeLite"
+                    currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
+                    currentTab == BottomTab.SAVED -> "সেভ করা"
+                    else -> "সেটিংস"
+                }
+                Text(
+                    title,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { goHome() }
+                        .padding(start = if (showSearch) 4.dp else 12.dp)
                 )
-            }
-
-            NavigationBar {
-                NavigationBarItem(
-                    selected = currentTab == BottomTab.HOME && !showSearch,
-                    onClick = { currentTab = BottomTab.HOME; showSearch = false },
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                    label = { Text("হোম") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == BottomTab.HISTORY,
-                    onClick = { currentTab = BottomTab.HISTORY; showSearch = false },
-                    icon = { Icon(Icons.Default.History, contentDescription = "History") },
-                    label = { Text("হিস্ট্রি") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == BottomTab.SAVED,
-                    onClick = { currentTab = BottomTab.SAVED; showSearch = false },
-                    icon = { Icon(Icons.Default.PlaylistPlay, contentDescription = "Saved") },
-                    label = { Text("সেভ") }
-                )
-                NavigationBarItem(
-                    selected = currentTab == BottomTab.SETTINGS,
-                    onClick = { currentTab = BottomTab.SETTINGS; showSearch = false },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                    label = { Text("সেটিংস") }
-                )
+                if (!showSearch) {
+                    IconButton(onClick = { openSearch() }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                }
             }
         }
+
+        // ---- মিনি-প্লেয়ার (বটম বারের ঠিক উপরে) ----
+        if (!isFullscreen && video != null && !playerExpanded) {
+            MiniPlayerBar(
+                video = video,
+                controller = controller,
+                onExpand = { playerExpanded = true },
+                onClose = {
+                    controller?.stop()
+                    nowPlaying = null
+                    preparedUrl = null
+                    NowPlayingStore.clear(context)
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = BOTTOM_BAR_HEIGHT)
+            )
+        }
+
+        // ---- বটম বার (সবসময় দৃশ্যমান, ভাসমান, গ্লাসি, কমপ্যাক্ট) ----
+        if (!isFullscreen) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .height(BOTTOM_BAR_HEIGHT)
+                    .align(Alignment.BottomCenter)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
+                    .blur(18.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BottomBarItem(Icons.Default.Home, "হোম", currentTab == BottomTab.HOME && !showSearch) {
+                    currentTab = BottomTab.HOME; showSearch = false; playerExpanded = false
+                }
+                BottomBarItem(Icons.Default.History, "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch) {
+                    currentTab = BottomTab.HISTORY; showSearch = false; playerExpanded = false
+                }
+                BottomBarItem(Icons.Default.PlaylistPlay, "সেভ", currentTab == BottomTab.SAVED && !showSearch) {
+                    currentTab = BottomTab.SAVED; showSearch = false; playerExpanded = false
+                }
+                BottomBarItem(Icons.Default.Settings, "সেটিংস", currentTab == BottomTab.SETTINGS && !showSearch) {
+                    currentTab = BottomTab.SETTINGS; showSearch = false; playerExpanded = false
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BottomBarItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
+    Column(
+        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(label, color = color, fontSize = 10.sp)
     }
 }
