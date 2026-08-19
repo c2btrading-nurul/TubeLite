@@ -59,6 +59,7 @@ private fun AppRoot() {
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var preparedUrl by remember { mutableStateOf<String?>(null) }
+    var playHistory by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
 
@@ -83,13 +84,23 @@ private fun AppRoot() {
         }
     }
 
-    fun playVideo(v: VideoResult) {
+    fun playVideo(v: VideoResult, addToHistory: Boolean = true) {
+        val current = nowPlaying
+        if (addToHistory && current != null && current.url != v.url) {
+            playHistory = playHistory + current // পরে "Previous" বাটনে এখানে ফিরে আসার জন্য
+        }
         if (v.url != nowPlaying?.url) {
             preparedUrl = null // নতুন ভিডিও — PlayerScreen-কে reload করতে বলা হচ্ছে
         }
         nowPlaying = v
         playerExpanded = true
         showSearch = false
+    }
+
+    fun playPrevious() {
+        val prev = playHistory.lastOrNull() ?: return
+        playHistory = playHistory.dropLast(1)
+        playVideo(prev, addToHistory = false) // history-তে আবার যোগ করার দরকার নেই
     }
 
     BackHandler(enabled = true) {
@@ -162,6 +173,8 @@ private fun AppRoot() {
                 isFullscreen = isFullscreen,
                 alreadyPrepared = preparedUrl == video.url,
                 onPrepared = { preparedUrl = it },
+                hasPrevious = playHistory.isNotEmpty(),
+                onPrevious = { playPrevious() },
                 onFullscreenChange = { isFullscreen = it },
                 onRelatedSelected = { playVideo(it) }
             )
