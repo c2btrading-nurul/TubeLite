@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -151,6 +153,8 @@ fun PlayerScreen(
     isFullscreen: Boolean,
     alreadyPrepared: Boolean,
     onPrepared: (String) -> Unit,
+    hasPrevious: Boolean = false,
+    onPrevious: () -> Unit = {},
     onFullscreenChange: (Boolean) -> Unit,
     onRelatedSelected: (VideoResult) -> Unit
 ) {
@@ -553,6 +557,20 @@ fun PlayerScreen(
                 Icon(Icons.Default.Download, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("ডাউনলোড")
+            }
+
+            OutlinedButton(
+                onClick = onPrevious,
+                enabled = hasPrevious
+            ) {
+                Icon(Icons.Default.SkipPrevious, contentDescription = "পূর্ববর্তী ভিডিও")
+            }
+
+            OutlinedButton(
+                onClick = { related.firstOrNull()?.let { onRelatedSelected(it) } },
+                enabled = related.isNotEmpty()
+            ) {
+                Icon(Icons.Default.SkipNext, contentDescription = "পরবর্তী ভিডিও")
             }
         }
 
