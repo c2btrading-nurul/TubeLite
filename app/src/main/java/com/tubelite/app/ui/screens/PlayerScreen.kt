@@ -354,7 +354,7 @@ fun PlayerScreen(
 
             // উপরে-ডানে: ফুলস্ক্রিন + সাবটাইটেল (CC)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
-                AnimatedVisibility(visible = controlsVisible) {
+                androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Row(Modifier.padding(6.dp)) {
                         if (subtitleOptions.isNotEmpty()) {
                             IconButton(onClick = {
@@ -380,7 +380,7 @@ fun PlayerScreen(
 
             // নিচে-ডানে: সেটিংস (কোয়ালিটি, স্পিড, অডিও, স্লিপ টাইমার, ফিল স্ক্রিন)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-                AnimatedVisibility(visible = controlsVisible) {
+                androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Box {
                         IconButton(onClick = { settingsOpen = true }, modifier = Modifier.padding(6.dp)) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
@@ -543,7 +543,7 @@ private fun SettingsAccordionRow(
             Text(label, fontWeight = FontWeight.Medium)
             Text(value, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
-        AnimatedVisibility(visible = expanded) {
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
             Column { content() }
         }
     }
