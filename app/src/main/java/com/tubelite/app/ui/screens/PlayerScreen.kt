@@ -18,8 +18,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Settings
@@ -58,6 +60,30 @@ import kotlinx.coroutines.launch
 private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private val SLEEP_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
 private const val SEEK_STEP_MS = 10_000L
+
+/**
+ * নেটওয়ার্ক-সম্পর্কিত সাময়িক (transient) এরর — যেমন ব্যাকগ্রাউন্ডে DNS/হোস্ট রিজলভ
+ * ফেইল হওয়া ("Unable to resolve host ...") — হলে অল্প বিরতি দিয়ে কয়েকবার আবার চেষ্টা
+ * করা হয়, যাতে ক্ষণস্থায়ী নেটওয়ার্ক থ্রটলিং/হ্যান্ডওভারে ভিডিও লোড না হওয়াটা এড়ানো যায়।
+ */
+private suspend fun <T> retryIO(
+    times: Int = 3,
+    initialDelayMs: Long = 1000L,
+    factor: Double = 2.0,
+    block: suspend () -> T
+): T {
+    var currentDelay = initialDelayMs
+    repeat(times - 1) {
+        try {
+            return block()
+        } catch (e: java.io.IOException) {
+            // UnknownHostException সহ সব IOException — নেটওয়ার্ক ফিরে আসার অপেক্ষায় আবার চেষ্টা
+        }
+        delay(currentDelay)
+        currentDelay = (currentDelay * factor).toLong()
+    }
+    return block() // শেষ চেষ্টা — এখনো ফেল করলে exception caller-এর কাছে যাবে
+}
 
 /** টাচ ইভেন্ট গিলে ফেলে না — শুধু ডাবল-ট্যাপ শনাক্ত করে, বাকি সব স্বাভাবিকভাবে PlayerView-তে পৌঁছায় */
 private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayout(context) {
@@ -150,6 +176,7 @@ fun PlayerScreen(
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var zoomFill by remember { mutableStateOf(false) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
+    var retryTrigger by remember { mutableStateOf(0) }
 
     fun effectiveQuality(q: QualityOption): QualityOption =
         if (q.videoOnlyUrl != null && selectedAudioUrl != null) q.copy(audioOnlyUrl = selectedAudioUrl) else q
@@ -157,7 +184,7 @@ fun PlayerScreen(
     fun currentMediaItem(q: QualityOption) =
         buildMediaItem(video.url, streamTitle, video.uploaderName, video.thumbnailUrl, effectiveQuality(q), selectedSubtitle)
 
-    LaunchedEffect(video.url, controller) {
+    LaunchedEffect(video.url, controller, retryTrigger) {
         if (controller == null) return@LaunchedEffect
 
         if (alreadyPrepared) {
@@ -165,13 +192,15 @@ fun PlayerScreen(
             // playback/position স্পর্শ না করে শুধু UI সিঙ্ক করা হচ্ছে
             loading = false
             try {
-                val playable = YoutubeRepository.getPlayableStream(video.url)
+                val playable = retryIO { YoutubeRepository.getPlayableStream(video.url) }
                 qualities = playable.options
                 audioOptions = playable.audioOptions
                 subtitleOptions = playable.subtitleOptions
                 selectedQuality = playable.options.firstOrNull { it.label == selectedQuality?.label } ?: playable.default
             } catch (_: Exception) { }
-            related = YoutubeRepository.getRelated(video.url)
+            try {
+                related = YoutubeRepository.getRelated(video.url)
+            } catch (_: Exception) { }
             return@LaunchedEffect
         }
 
@@ -180,7 +209,10 @@ fun PlayerScreen(
         selectedAudioUrl = null
         selectedSubtitle = null
         try {
-            val playable: PlayableStream = YoutubeRepository.getPlayableStream(video.url)
+            // "youtubei.googleapis.com" হোস্ট রিজলভ ফেইল করার মতো সাময়িক নেটওয়ার্ক এরর
+            // (ব্যাকগ্রাউন্ড থ্রটলিং, Wi-Fi/ডেটা হ্যান্ডওভার) হলে এখানে কয়েকবার আবার
+            // চেষ্টা করা হচ্ছে, যাতে পরের ভিডিও অটো-প্লে না হয়ে থেমে না যায়।
+            val playable: PlayableStream = retryIO { YoutubeRepository.getPlayableStream(video.url) }
             streamTitle = playable.title
             qualities = playable.options
             audioOptions = playable.audioOptions
@@ -196,12 +228,18 @@ fun PlayerScreen(
             com.tubelite.app.data.NowPlayingStore.save(context, video)
             onPrepared(video.url)
         } catch (e: Exception) {
-            error = "স্ট্রিম লোড করা যায়নি: ${e.message}"
+            error = when (e) {
+                is java.net.UnknownHostException ->
+                    "ইন্টারনেট সংযোগ পাওয়া যাচ্ছে না। সংযোগ ঠিক আছে কিনা দেখে আবার চেষ্টা করুন।"
+                else -> "স্ট্রিম লোড করা যায়নি: ${e.message}"
+            }
         } finally {
             loading = false
         }
 
-        related = YoutubeRepository.getRelated(video.url)
+        try {
+            related = YoutubeRepository.getRelated(video.url)
+        } catch (_: Exception) { }
     }
 
     DisposableEffect(controller, related, autoPlayEnabled) {
@@ -383,7 +421,25 @@ fun PlayerScreen(
                 }
             }
 
-            // নিচে-ডানে: সেটিংস (কোয়ালিটি, স্পিড, অডিও, স্লিপ টাইমার, ফিল স্ক্রিন)
+            // ডান পাশে-মাঝখানে: শুধু ফুলস্ক্রিন অবস্থায় — Fill/Fit to screen টগল
+            if (isFullscreen) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+                    androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
+                        IconButton(
+                            onClick = { zoomFill = !zoomFill },
+                            modifier = Modifier.padding(end = 6.dp)
+                        ) {
+                            Icon(
+                                if (zoomFill) Icons.Default.FitScreen else Icons.Default.AspectRatio,
+                                contentDescription = if (zoomFill) "Fit to screen" else "Fill screen",
+                                tint = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+
+            // নিচে-ডানে: সেটিংস (কোয়ালিটি, স্পিড, অডিও, স্লিপ টাইমার)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
                 androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
                     Box {
@@ -454,22 +510,6 @@ fun PlayerScreen(
                                         )
                                     }
                                 }
-                                Divider()
-                                SettingsAccordionRow(
-                                    label = "Fill Screen",
-                                    value = if (zoomFill) "On" else "Off",
-                                    expanded = expandedSection == "fill",
-                                    onHeaderClick = { expandedSection = if (expandedSection == "fill") null else "fill" }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text((if (!zoomFill) "✓ " else "   ") + "Off (fit)") },
-                                        onClick = { zoomFill = false; settingsOpen = false; expandedSection = null }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text((if (zoomFill) "✓ " else "   ") + "On (crop to fill)") },
-                                        onClick = { zoomFill = true; settingsOpen = false; expandedSection = null }
-                                    )
-                                }
                             }
                         }
                     }
@@ -480,7 +520,14 @@ fun PlayerScreen(
         if (isFullscreen) return@Column
 
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                TextButton(onClick = { retryTrigger++ }) { Text("আবার চেষ্টা করুন") }
+            }
         }
 
         Text(
