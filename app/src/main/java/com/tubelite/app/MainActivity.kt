@@ -60,35 +60,38 @@ private fun AppRoot() {
     var showExitConfirm by remember { mutableStateOf(false) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
-    DisposableEffect(Unit) {
+
+        DisposableEffect(Unit) {
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
         val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
         controllerFuture.addListener({
             val c = controllerFuture.get()
-            controller = c
 
-            // অ্যাপ বন্ধ করার পরও ব্যাকগ্রাউন্ডে ভিডিও/অডিও চলতে থাকলে, MediaController
-            // একই সেশনে রিকানেক্ট করে — কিন্তু nowPlaying (UI state) নতুন করে null থাকে।
-            // controller-এ চলমান মিডিয়া থাকলে সেখান থেকে VideoResult পুনর্গঠন করে
-            // মিনি-প্লেয়ারে আবার দেখানো হচ্ছে।
-            if (nowPlaying == null) {
-                val item = c.currentMediaItem
-                val mediaId = item?.mediaId
-                if (item != null && !mediaId.isNullOrBlank() && c.playbackState != Player.STATE_IDLE) {
-                    val meta = item.mediaMetadata
-                    val durationMs = c.duration
-                    nowPlaying = VideoResult(
-                        title = meta.title?.toString() ?: "",
-                        url = mediaId,
-                        uploaderName = meta.artist?.toString() ?: "",
-                        thumbnailUrl = meta.artworkUri?.toString(),
-                        durationSeconds = if (durationMs != C.TIME_UNSET) durationMs / 1000 else 0L
-                    )
-                    // মিনি-প্লেয়ার হিসেবে দেখানো হচ্ছে, সরাসরি ফুলস্ক্রিন প্লেয়ার খুলছে না —
-                    // ব্যবহারকারী ট্যাপ করলে PlayerScreen-এর resume-fix অনুযায়ী ঠিক ঐ পজিশন থেকেই চলবে।
-                    playerExpanded = false
+            // যদি connect হওয়ার মুহূর্তে state এখনো sync না হয়ে থাকে, পরবর্তী যেকোনো
+            // player event-এ আবার চেষ্টা করা হচ্ছে — এতে ব্যাকগ্রাউন্ড থেকে মিনি-প্লেয়ার
+            // ফিরে আসার নির্ভরযোগ্যতা বাড়বে
+            c.addListener(object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) {
+                    if (nowPlaying == null) {
+                        val item = player.currentMediaItem
+                        val mediaId = item?.mediaId
+                        if (item != null && !mediaId.isNullOrBlank() && player.mediaItemCount > 0) {
+                            val meta = item.mediaMetadata
+                            val durationMs = player.duration
+                            nowPlaying = VideoResult(
+                                title = meta.title?.toString() ?: "",
+                                url = mediaId,
+                                uploaderName = meta.artist?.toString() ?: "",
+                                thumbnailUrl = meta.artworkUri?.toString(),
+                                durationSeconds = if (durationMs != C.TIME_UNSET) durationMs / 1000 else 0L
+                            )
+                            playerExpanded = false
+                        }
+                    }
                 }
-            }
+            })
+
+            controller = c
         }, MoreExecutors.directExecutor())
         onDispose {
             MediaController.releaseFuture(controllerFuture)
