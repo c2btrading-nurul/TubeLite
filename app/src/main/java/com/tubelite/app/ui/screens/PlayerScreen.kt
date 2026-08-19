@@ -161,6 +161,13 @@ fun PlayerScreen(
         val alreadyLoaded = controller.currentMediaItem?.mediaId == video.url &&
             controller.playbackState != Player.STATE_IDLE
 
+        // ⚠️ সাময়িক ডায়াগনস্টিক — বাগ ধরার পর মুছে ফেলা হবে
+        Toast.makeText(
+            context,
+            "DEBUG: video.url=${video.url.takeLast(15)} | controllerMediaId=${controller.currentMediaItem?.mediaId?.takeLast(15)} | state=${controller.playbackState} | alreadyLoaded=$alreadyLoaded",
+            Toast.LENGTH_LONG
+        ).show()
+        
         if (alreadyLoaded) {
             streamTitle = controller.currentMediaItem?.mediaMetadata?.title?.toString() ?: video.title
             loading = false
@@ -303,7 +310,9 @@ fun PlayerScreen(
                                     controlsVisible = visibility == View.VISIBLE
                                 }
                             )
+                            findViewById<View>(androidx.media3.ui.R.id.exo_settings)?.visibility = View.GONE
                         }
+                        
                         DoubleTapSeekOverlay(ctx).apply {
                             addView(
                                 playerView,
