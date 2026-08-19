@@ -2,18 +2,23 @@ package com.tubelite.app.ui.screens
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import android.os.Bundle
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -23,7 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +46,7 @@ import coil.compose.AsyncImage
 import com.tubelite.app.data.AudioOption
 import com.tubelite.app.data.PlayableStream
 import com.tubelite.app.data.QualityOption
+import com.tubelite.app.data.SubtitleOption
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
 import com.tubelite.app.download.DownloadHelper
@@ -54,19 +59,62 @@ private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private val SLEEP_OPTIONS = listOf(0, 5, 10, 15, 30, 60)
 private const val SEEK_STEP_MS = 10_000L
 
-private fun buildMediaItem(videoUrl: String, title: String, q: QualityOption): MediaItem {
+/** টাচ ইভেন্ট গিলে ফেলে না — শুধু ডাবল-ট্যাপ শনাক্ত করে, বাকি সব স্বাভাবিকভাবে PlayerView-তে পৌঁছায় */
+private class DoubleTapSeekOverlay(context: android.content.Context) : FrameLayout(context) {
+    var onDoubleTapLeft: (() -> Unit)? = null
+    var onDoubleTapRight: (() -> Unit)? = null
+
+    private val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDoubleTap(e: MotionEvent): Boolean {
+            if (e.x > width / 2f) onDoubleTapRight?.invoke() else onDoubleTapLeft?.invoke()
+            return true
+        }
+    })
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        detector.onTouchEvent(ev)
+        return super.dispatchTouchEvent(ev) // সবসময় নিচের PlayerView-তে পাস করে দেওয়া হয়
+    }
+}
+
+private fun buildMediaItem(
+    videoUrl: String,
+    title: String,
+    uploader: String,
+    thumbnail: String?,
+    q: QualityOption,
+    subtitle: SubtitleOption?
+): MediaItem {
     val bundle = Bundle()
     q.progressiveUrl?.let { bundle.putString(TubeMediaSourceFactory.KEY_PROGRESSIVE, it) }
     q.videoOnlyUrl?.let { bundle.putString(TubeMediaSourceFactory.KEY_VIDEO_ONLY, it) }
     q.audioOnlyUrl?.let { bundle.putString(TubeMediaSourceFactory.KEY_AUDIO_ONLY, it) }
     q.hlsUrl?.let { bundle.putString(TubeMediaSourceFactory.KEY_HLS, it) }
     val fallbackUri = q.progressiveUrl ?: q.hlsUrl ?: q.videoOnlyUrl ?: "about:blank"
-    return MediaItem.Builder()
+
+    val metadata = MediaMetadata.Builder()
+        .setTitle(title)
+        .setArtist(uploader)
+        .apply { thumbnail?.let { setArtworkUri(Uri.parse(it)) } }
+        .build()
+
+    val builder = MediaItem.Builder()
         .setMediaId(videoUrl)
         .setUri(fallbackUri)
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).build())
+        .setMediaMetadata(metadata)
         .setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(bundle).build())
-        .build()
+
+    if (subtitle != null) {
+        builder.setSubtitleConfigurations(
+            listOf(
+                MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
+                    .setMimeType(subtitle.mimeType)
+                    .setLanguage(subtitle.label)
+                    .build()
+            )
+        )
+    }
+    return builder.build()
 }
 
 @Composable
@@ -87,20 +135,25 @@ fun PlayerScreen(
     var streamTitle by remember { mutableStateOf(video.title) }
     var qualities by remember { mutableStateOf<List<QualityOption>>(emptyList()) }
     var audioOptions by remember { mutableStateOf<List<AudioOption>>(emptyList()) }
+    var subtitleOptions by remember { mutableStateOf<List<SubtitleOption>>(emptyList()) }
     var selectedQuality by remember { mutableStateOf<QualityOption?>(null) }
     var selectedAudioUrl by remember { mutableStateOf<String?>(null) }
+    var selectedSubtitle by remember { mutableStateOf<SubtitleOption?>(null) }
     var selectedSpeed by remember { mutableFloatStateOf(1f) }
     var sleepMinutes by remember { mutableStateOf(0) }
     var sleepJob by remember { mutableStateOf<Job?>(null) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var expandedSection by remember { mutableStateOf<String?>(null) }
     var controlsVisible by remember { mutableStateOf(true) }
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var zoomFill by remember { mutableStateOf(false) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
-    var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
 
     fun effectiveQuality(q: QualityOption): QualityOption =
         if (q.videoOnlyUrl != null && selectedAudioUrl != null) q.copy(audioOnlyUrl = selectedAudioUrl) else q
+
+    fun currentMediaItem(q: QualityOption) =
+        buildMediaItem(video.url, streamTitle, video.uploaderName, video.thumbnailUrl, effectiveQuality(q), selectedSubtitle)
 
     LaunchedEffect(video.url, controller) {
         if (controller == null) return@LaunchedEffect
@@ -115,6 +168,7 @@ fun PlayerScreen(
                 val playable = YoutubeRepository.getPlayableStream(video.url)
                 qualities = playable.options
                 audioOptions = playable.audioOptions
+                subtitleOptions = playable.subtitleOptions
                 selectedQuality = playable.options.firstOrNull { it.label == selectedQuality?.label } ?: playable.default
             } catch (_: Exception) { }
             related = YoutubeRepository.getRelated(video.url)
@@ -124,14 +178,16 @@ fun PlayerScreen(
         loading = true
         error = null
         selectedAudioUrl = null
+        selectedSubtitle = null
         try {
             val playable: PlayableStream = YoutubeRepository.getPlayableStream(video.url)
             streamTitle = playable.title
             qualities = playable.options
             audioOptions = playable.audioOptions
+            subtitleOptions = playable.subtitleOptions
             selectedQuality = playable.default
 
-            controller.setMediaItem(buildMediaItem(video.url, playable.title, playable.default))
+            controller.setMediaItem(currentMediaItem(playable.default))
             controller.prepare()
             controller.playWhenReady = autoPlayEnabled
             controller.setPlaybackParameters(PlaybackParameters(1f))
@@ -181,30 +237,35 @@ fun PlayerScreen(
         }
     }
 
-    fun switchQuality(q: QualityOption) {
-        if (controller == null || q == selectedQuality) return
+    fun rebuildKeepingPosition(newQuality: QualityOption) {
+        if (controller == null) return
         val pos = controller.currentPosition
         val wasPlaying = controller.isPlaying
-        selectedAudioUrl = null
-        selectedQuality = q
-        controller.setMediaItem(buildMediaItem(video.url, streamTitle, q))
+        controller.setMediaItem(currentMediaItem(newQuality))
         controller.prepare()
         controller.seekTo(pos)
         controller.playWhenReady = wasPlaying
         controller.setPlaybackParameters(PlaybackParameters(selectedSpeed))
     }
 
+    fun switchQuality(q: QualityOption) {
+        if (q == selectedQuality) return
+        selectedAudioUrl = null
+        selectedQuality = q
+        rebuildKeepingPosition(q)
+    }
+
     fun switchAudio(audio: AudioOption) {
         val q = selectedQuality ?: return
-        if (controller == null || q.videoOnlyUrl == null) return
-        val pos = controller.currentPosition
-        val wasPlaying = controller.isPlaying
+        if (q.videoOnlyUrl == null) return
         selectedAudioUrl = audio.url
-        controller.setMediaItem(buildMediaItem(video.url, streamTitle, effectiveQuality(q)))
-        controller.prepare()
-        controller.seekTo(pos)
-        controller.playWhenReady = wasPlaying
-        controller.setPlaybackParameters(PlaybackParameters(selectedSpeed))
+        rebuildKeepingPosition(q)
+    }
+
+    fun switchSubtitle(sub: SubtitleOption?) {
+        selectedSubtitle = sub
+        val q = selectedQuality ?: return
+        rebuildKeepingPosition(q)
     }
 
     fun switchSpeed(speed: Float) {
@@ -232,52 +293,45 @@ fun PlayerScreen(
             if (controller != null) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
-                    factory = {
-                        PlayerView(it).apply {
+                    factory = { ctx ->
+                        val playerView = PlayerView(ctx).apply {
                             player = controller
                             useController = true
                             keepScreenOn = true
-                            resizeMode = if (zoomFill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
                             setControllerVisibilityListener(
                                 PlayerView.ControllerVisibilityListener { visibility ->
                                     controlsVisible = visibility == View.VISIBLE
                                 }
                             )
-                            playerViewRef = this
+                        }
+                        DoubleTapSeekOverlay(ctx).apply {
+                            addView(
+                                playerView,
+                                ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                            )
                         }
                     },
-                    update = { view ->
-                        view.resizeMode = if (zoomFill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    update = { overlay ->
+                        val container = overlay as DoubleTapSeekOverlay
+                        val playerView = container.getChildAt(0) as PlayerView
+                        playerView.resizeMode = if (zoomFill) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        container.onDoubleTapLeft = {
+                            val c = controller
+                            if (c != null) {
+                                c.seekTo((c.currentPosition - SEEK_STEP_MS).coerceAtLeast(0))
+                                seekFeedback = "-১০ সেকেন্ড"
+                            }
+                        }
+                        container.onDoubleTapRight = {
+                            val c = controller
+                            if (c != null) {
+                                c.seekTo(c.currentPosition + SEEK_STEP_MS)
+                                seekFeedback = "+১০ সেকেন্ড"
+                            }
+                        }
                     }
                 )
             }
-
-            // ডাবল-ট্যাপে ফরওয়ার্ড/ব্যাকওয়ার্ড, সিঙ্গেল-ট্যাপে কন্ট্রোল টগল — কন্ট্রোল দেখানো না থাকলেও কাজ করবে
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .pointerInput(controller) {
-                        detectTapGestures(
-                            onTap = {
-                                val pv = playerViewRef
-                                if (pv != null) {
-                                    if (pv.isControllerFullyVisible) pv.hideController() else pv.showController()
-                                }
-                            },
-                            onDoubleTap = { offset ->
-                                val c = controller ?: return@detectTapGestures
-                                val isRight = offset.x > size.width / 2
-                                val newPos = if (isRight) {
-                                    c.currentPosition + SEEK_STEP_MS
-                                } else {
-                                    (c.currentPosition - SEEK_STEP_MS).coerceAtLeast(0)
-                                }
-                                c.seekTo(newPos)
-                                seekFeedback = if (isRight) "+১০ সেকেন্ড" else "-১০ সেকেন্ড"
-                            }
-                        )
-                    }
-            )
 
             if (loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -292,66 +346,25 @@ fun PlayerScreen(
                         color = Color.White,
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.5f), shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.5f), shape = RoundedCornerShape(8.dp))
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
             }
 
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-                // Explicitly qualified to avoid resolving to the ColumnScope.AnimatedVisibility
-                // extension (from the outer Column's implicit receiver) instead of the
-                // plain top-level composable.
-                androidx.compose.animation.AnimatedVisibility(visible = controlsVisible) {
-                    Row(Modifier.padding(end = 6.dp)) {
-                        if (isFullscreen) {
-                            IconButton(onClick = { zoomFill = !zoomFill }) {
-                                Icon(Icons.Default.AspectRatio, contentDescription = "Zoom to fill", tint = Color.White)
-                            }
-                        }
-                        Box {
-                            IconButton(onClick = { settingsOpen = true }) {
-                                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
-                            }
-                            DropdownMenu(expanded = settingsOpen, onDismissRequest = { settingsOpen = false }) {
-                                Text("কোয়ালিটি", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                                qualities.forEach { q ->
-                                    DropdownMenuItem(
-                                        text = { Text((if (q == selectedQuality) "✓ " else "   ") + q.label) },
-                                        onClick = { settingsOpen = false; switchQuality(q) }
-                                    )
-                                }
-
-                                if (audioOptions.size > 1 && selectedQuality?.videoOnlyUrl != null) {
-                                    Divider()
-                                    Text("অডিও", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                                    audioOptions.forEach { a ->
-                                        val isSelected = (selectedAudioUrl ?: selectedQuality?.audioOnlyUrl) == a.url
-                                        DropdownMenuItem(
-                                            text = { Text((if (isSelected) "✓ " else "   ") + a.label) },
-                                            onClick = { settingsOpen = false; switchAudio(a) }
-                                        )
-                                    }
-                                }
-
-                                Divider()
-                                Text("প্লেব্যাক স্পিড", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                                SPEED_OPTIONS.forEach { s ->
-                                    DropdownMenuItem(
-                                        text = { Text((if (s == selectedSpeed) "✓ " else "   ") + "${s}x") },
-                                        onClick = { settingsOpen = false; switchSpeed(s) }
-                                    )
-                                }
-
-                                Divider()
-                                Text("স্লিপ টাইমার", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                                SLEEP_OPTIONS.forEach { m ->
-                                    val label = if (m == 0) "বন্ধ" else "$m মিনিট"
-                                    DropdownMenuItem(
-                                        text = { Text((if (m == sleepMinutes) "✓ " else "   ") + label) },
-                                        onClick = { settingsOpen = false; setSleepTimer(m) }
-                                    )
-                                }
+            // উপরে-ডানে: ফুলস্ক্রিন + সাবটাইটেল (CC)
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopEnd) {
+                AnimatedVisibility(visible = controlsVisible) {
+                    Row(Modifier.padding(6.dp)) {
+                        if (subtitleOptions.isNotEmpty()) {
+                            IconButton(onClick = {
+                                switchSubtitle(if (selectedSubtitle == null) subtitleOptions.first() else null)
+                            }) {
+                                Icon(
+                                    Icons.Default.ClosedCaption,
+                                    contentDescription = "Subtitles",
+                                    tint = if (selectedSubtitle != null) MaterialTheme.colorScheme.primary else Color.White
+                                )
                             }
                         }
                         IconButton(onClick = { onFullscreenChange(!isFullscreen) }) {
@@ -360,6 +373,99 @@ fun PlayerScreen(
                                 contentDescription = "Fullscreen",
                                 tint = Color.White
                             )
+                        }
+                    }
+                }
+            }
+
+            // নিচে-ডানে: সেটিংস (কোয়ালিটি, স্পিড, অডিও, স্লিপ টাইমার, ফিল স্ক্রিন)
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+                AnimatedVisibility(visible = controlsVisible) {
+                    Box {
+                        IconButton(onClick = { settingsOpen = true }, modifier = Modifier.padding(6.dp)) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                        }
+                        DropdownMenu(
+                            expanded = settingsOpen,
+                            onDismissRequest = { settingsOpen = false; expandedSection = null }
+                        ) {
+                            Column(Modifier.width(230.dp)) {
+                                SettingsAccordionRow(
+                                    label = "Quality",
+                                    value = selectedQuality?.label ?: "",
+                                    expanded = expandedSection == "quality",
+                                    onHeaderClick = { expandedSection = if (expandedSection == "quality") null else "quality" }
+                                ) {
+                                    qualities.forEach { q ->
+                                        DropdownMenuItem(
+                                            text = { Text((if (q == selectedQuality) "✓ " else "   ") + q.label) },
+                                            onClick = { switchQuality(q); settingsOpen = false; expandedSection = null }
+                                        )
+                                    }
+                                }
+                                Divider()
+                                SettingsAccordionRow(
+                                    label = "Speed",
+                                    value = "${selectedSpeed}x",
+                                    expanded = expandedSection == "speed",
+                                    onHeaderClick = { expandedSection = if (expandedSection == "speed") null else "speed" }
+                                ) {
+                                    SPEED_OPTIONS.forEach { s ->
+                                        DropdownMenuItem(
+                                            text = { Text((if (s == selectedSpeed) "✓ " else "   ") + "${s}x") },
+                                            onClick = { switchSpeed(s); settingsOpen = false; expandedSection = null }
+                                        )
+                                    }
+                                }
+                                if (audioOptions.size > 1 && selectedQuality?.videoOnlyUrl != null) {
+                                    Divider()
+                                    SettingsAccordionRow(
+                                        label = "Audio",
+                                        value = "",
+                                        expanded = expandedSection == "audio",
+                                        onHeaderClick = { expandedSection = if (expandedSection == "audio") null else "audio" }
+                                    ) {
+                                        audioOptions.forEach { a ->
+                                            val isSelected = (selectedAudioUrl ?: selectedQuality?.audioOnlyUrl) == a.url
+                                            DropdownMenuItem(
+                                                text = { Text((if (isSelected) "✓ " else "   ") + a.label) },
+                                                onClick = { switchAudio(a); settingsOpen = false; expandedSection = null }
+                                            )
+                                        }
+                                    }
+                                }
+                                Divider()
+                                SettingsAccordionRow(
+                                    label = "Sleep Timer",
+                                    value = if (sleepMinutes == 0) "Off" else "${sleepMinutes}m",
+                                    expanded = expandedSection == "sleep",
+                                    onHeaderClick = { expandedSection = if (expandedSection == "sleep") null else "sleep" }
+                                ) {
+                                    SLEEP_OPTIONS.forEach { m ->
+                                        val label = if (m == 0) "Off" else "$m min"
+                                        DropdownMenuItem(
+                                            text = { Text((if (m == sleepMinutes) "✓ " else "   ") + label) },
+                                            onClick = { setSleepTimer(m); settingsOpen = false; expandedSection = null }
+                                        )
+                                    }
+                                }
+                                Divider()
+                                SettingsAccordionRow(
+                                    label = "Fill Screen",
+                                    value = if (zoomFill) "On" else "Off",
+                                    expanded = expandedSection == "fill",
+                                    onHeaderClick = { expandedSection = if (expandedSection == "fill") null else "fill" }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text((if (!zoomFill) "✓ " else "   ") + "Off (fit)") },
+                                        onClick = { zoomFill = false; settingsOpen = false; expandedSection = null }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text((if (zoomFill) "✓ " else "   ") + "On (crop to fill)") },
+                                        onClick = { zoomFill = true; settingsOpen = false; expandedSection = null }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -419,6 +525,31 @@ fun PlayerScreen(
 }
 
 @Composable
+private fun SettingsAccordionRow(
+    label: String,
+    value: String,
+    expanded: Boolean,
+    onHeaderClick: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onHeaderClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, fontWeight = FontWeight.Medium)
+            Text(value, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column { content() }
+        }
+    }
+}
+
+@Composable
 private fun RelatedVideoRow(video: VideoResult, onClick: () -> Unit) {
     Row(
         Modifier
@@ -429,9 +560,7 @@ private fun RelatedVideoRow(video: VideoResult, onClick: () -> Unit) {
         AsyncImage(
             model = video.thumbnailUrl,
             contentDescription = null,
-            modifier = Modifier
-                .width(140.dp)
-                .height(80.dp)
+            modifier = Modifier.width(140.dp).height(80.dp)
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
