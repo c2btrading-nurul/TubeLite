@@ -10,13 +10,9 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.SingleSampleMediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 
-/**
- * Reads video/audio URLs stashed in a MediaItem's request-metadata extras
- * (set by PlayerScreen) and builds the right MediaSource — progressive,
- * merged video-only+audio-only DASH tracks, or HLS.
- */
 @UnstableApi
 class TubeMediaSourceFactory(
     private val dataSourceFactory: DataSource.Factory
@@ -33,7 +29,7 @@ class TubeMediaSourceFactory(
         val audioOnly = extras?.getString(KEY_AUDIO_ONLY)
         val hls = extras?.getString(KEY_HLS)
 
-        return when {
+        val baseSource: MediaSource = when {
             progressive != null -> ProgressiveMediaSource.Factory(dataSourceFactory)
                 .createMediaSource(MediaItem.fromUri(Uri.parse(progressive)))
 
@@ -47,6 +43,14 @@ class TubeMediaSourceFactory(
 
             else -> ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(mediaItem)
         }
+
+        val subtitleConfigs = mediaItem.localConfiguration?.subtitleConfigurations.orEmpty()
+        if (subtitleConfigs.isEmpty()) return baseSource
+
+        val subtitleSources = subtitleConfigs.map { config ->
+            SingleSampleMediaSource.Factory(dataSourceFactory).createMediaSource(config, C.TIME_UNSET)
+        }
+        return MergingMediaSource(baseSource, *subtitleSources.toTypedArray())
     }
 
     companion object {
