@@ -154,6 +154,13 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     }
 
     fun playPrevious() {
+        // Playlist/queue-এর মধ্যে থাকলে আগে playlist-এর আগের ভিডিও চালাবে
+        if (queueIndex > 0 && queue.isNotEmpty()) {
+            playFromQueue(queue, queueIndex - 1)
+            return
+        }
+    
+        // Playlist-এর প্রথম ভিডিও হলে এরপর playback history থেকে আগের ভিডিও
         val prev = playHistory.lastOrNull() ?: return
         playHistory = playHistory.dropLast(1)
         playVideo(prev, addToHistory = false)
@@ -214,7 +221,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         isFullscreen = isFullscreen,
                         alreadyPrepared = preparedUrl == video.url,
                         onPrepared = { preparedUrl = it },
-                        hasPrevious = playHistory.isNotEmpty(),
+                        hasPrevious = queueIndex > 0 || playHistory.isNotEmpty(),
                         onPrevious = { playPrevious() },
                         queue = queue,
                         queueIndex = queueIndex,
