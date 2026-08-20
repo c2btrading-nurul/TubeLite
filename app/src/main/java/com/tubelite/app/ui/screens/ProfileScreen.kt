@@ -17,11 +17,11 @@ import coil.compose.AsyncImage
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.tubelite.app.R
+import com.google.android.gms.common.api.Scope
 import com.tubelite.app.data.CloudSync
 import com.tubelite.app.data.WatchHistoryStore
+
+private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
 @Composable
 fun ProfileScreen(
@@ -31,40 +31,35 @@ fun ProfileScreen(
     onAutoplayNextChange: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
-    var firebaseUser by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser) }
+    var account by remember { mutableStateOf(GoogleSignIn.getLastSignedInAccount(context)) }
     var syncing by remember { mutableStateOf(false) }
 
     val gso = remember {
         GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestIdToken(context.getString(R.string.default_web_client_id))
             .requestEmail()
+            .requestScopes(Scope(DRIVE_APPDATA_SCOPE))
             .build()
     }
     val client = remember { GoogleSignIn.getClient(context, gso) }
 
+    fun syncAfterSignIn() {
+        syncing = true
+        CloudSync.pullAll(context) { found ->
+            if (!found) CloudSync.pushAll(context)
+            syncing = false
+            Toast.makeText(
+                context,
+                if (found) "Drive থেকে ডেটা রিস্টোর হয়েছে" else "সাইন-ইন সফল, ডেটা Drive-এ সেভ শুরু হলো",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
         try {
-            val account = task.getResult(ApiException::class.java)
-            val credential = GoogleAuthProvider.getCredential(account.idToken, null)
-            syncing = true
-            FirebaseAuth.getInstance().signInWithCredential(credential)
-                .addOnSuccessListener {
-                    firebaseUser = FirebaseAuth.getInstance().currentUser
-                    CloudSync.pullAll(context) { foundCloudData ->
-                        if (!foundCloudData) CloudSync.pushAll(context)
-                        syncing = false
-                        Toast.makeText(
-                            context,
-                            if (foundCloudData) "ক্লাউড থেকে ডেটা রিস্টোর হয়েছে" else "সাইন-ইন সফল, ডেটা ক্লাউডে সেভ শুরু হলো",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-                .addOnFailureListener {
-                    syncing = false
-                    Toast.makeText(context, "Firebase সাইন-ইন ব্যর্থ: ${it.message}", Toast.LENGTH_SHORT).show()
-                }
+            account = task.getResult(ApiException::class.java)
+            syncAfterSignIn()
         } catch (e: ApiException) {
             Toast.makeText(context, "সাইন-ইন ব্যর্থ (${e.statusCode})", Toast.LENGTH_SHORT).show()
         }
@@ -74,20 +69,16 @@ fun ProfileScreen(
         Text("প্রোফাইল", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(16.dp))
 
-        val user = firebaseUser
-        if (user != null) {
+        val acc = account
+        if (acc != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (user.photoUrl != null) {
-                    AsyncImage(
-                        model = user.photoUrl,
-                        contentDescription = null,
-                        modifier = Modifier.size(56.dp).clip(CircleShape)
-                    )
+                if (acc.photoUrl != null) {
+                    AsyncImage(model = acc.photoUrl, contentDescription = null, modifier = Modifier.size(56.dp).clip(CircleShape))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text(user.displayName ?: "", fontWeight = FontWeight.Medium)
-                    Text(user.email ?: "", style = MaterialTheme.typography.bodySmall)
+                    Text(acc.displayName ?: "", fontWeight = FontWeight.Medium)
+                    Text(acc.email ?: "", style = MaterialTheme.typography.bodySmall)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -100,9 +91,8 @@ fun ProfileScreen(
                 Spacer(Modifier.height(8.dp))
             }
             OutlinedButton(onClick = {
-                FirebaseAuth.getInstance().signOut()
                 client.signOut()
-                firebaseUser = null
+                account = null
             }) { Text("সাইন-আউট") }
         } else {
             Button(onClick = { launcher.launch(client.signInIntent) }) {
@@ -110,7 +100,7 @@ fun ProfileScreen(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "সাইন-ইন করলে আপনার প্লে-লিস্ট, হিস্ট্রি ও সেটিংস ক্লাউডে সেভ থাকবে — অ্যাপ পুনরায় ইনস্টল করে সাইন-ইন করলেও ফিরে পাবেন।",
+                "সাইন-ইন করলে প্লে-লিস্ট/হিস্ট্রি/সেটিংস আপনার Google Drive-এর লুকানো অ্যাপ ফোল্ডারে সেভ থাকবে।",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -135,3 +125,4 @@ fun ProfileScreen(
         OutlinedButton(onClick = { WatchHistoryStore.clear(context) }) { Text("দেখার ইতিহাস মুছুন") }
     }
 }
+ 
