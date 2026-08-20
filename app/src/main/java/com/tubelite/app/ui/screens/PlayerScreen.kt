@@ -253,19 +253,27 @@ fun PlayerScreen(
 
     DisposableEffect(controller, related, autoPlayEnabled, queue, queueIndex) {
         if (controller == null) return@DisposableEffect onDispose {}
+    
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && autoPlayEnabled) {
+                    // Playlist-এর মধ্যে পরের ভিডিও থাকলে শুধু সেটিই চালু হবে
                     if (queueIndex in 0 until queue.lastIndex) {
                         onQueueJump(queueIndex + 1)
                     } else {
-                        related.firstOrNull()?.let { onRelatedSelected(it) }
+                        // Playlist-এর শেষ ভিডিও শেষ হলে থেমে থাকবে।
+                        // Related video বা অন্য কোনো ভিডিও automatically চালু হবে না।
+                        controller.pause()
                     }
                 }
             }
         }
+    
         controller.addListener(listener)
-        onDispose { controller.removeListener(listener) }
+    
+        onDispose {
+            controller.removeListener(listener)
+        }
     }
 
     DisposableEffect(isFullscreen) {
