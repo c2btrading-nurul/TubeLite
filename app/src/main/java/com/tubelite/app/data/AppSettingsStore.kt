@@ -12,6 +12,7 @@ object AppSettingsStore {
 
     fun setDarkMode(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_DARK, value).apply()
+        CloudSync.pushIfSignedIn(context)
     }
 
     fun isAutoplayNextDefault(context: Context): Boolean =
@@ -19,5 +20,6 @@ object AppSettingsStore {
 
     fun setAutoplayNextDefault(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_AUTOPLAY, value).apply()
+        CloudSync.pushIfSignedIn(context)
     }
 }
