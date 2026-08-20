@@ -78,7 +78,31 @@ fun SubscriptionScreen(
                     )
                 }
                 items(videos) { video ->
-                    RelatedVideoRow(video) { onVideoSelected(video) }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onVideoSelected(video) }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        VideoThumbnail(
+                            video = video,
+                            modifier = Modifier.width(140.dp).height(80.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                video.title,
+                                maxLines = 2,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                video.uploaderName,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
                 }
             }
         } else {
