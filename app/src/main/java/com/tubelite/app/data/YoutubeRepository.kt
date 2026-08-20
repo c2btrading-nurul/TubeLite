@@ -132,6 +132,18 @@ object YoutubeRepository {
         }
     }
 
+    suspend fun getChannelVideos(channelUrl: String, maxItems: Int = 30): List<VideoResult> = withContext(Dispatchers.IO) {
+        ensureInit()
+        val channelExtractor = ServiceList.YouTube.getChannelExtractor(channelUrl)
+        channelExtractor.fetchPage()
+        val videosTabHandler = channelExtractor.tabs.firstOrNull {
+            it.contentFilters.contains(org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS)
+        } ?: return@withContext emptyList()
+        val tabExtractor = ServiceList.YouTube.getChannelTabExtractor(videosTabHandler)
+        tabExtractor.fetchPage()
+        loadMoreItems(tabExtractor, tabExtractor.initialPage, maxItems)
+    }
+
     suspend fun getChannel(channelUrl: String): ChannelInfo = withContext(Dispatchers.IO) {
         ensureInit()
         val channelExtractor = ServiceList.YouTube.getChannelExtractor(channelUrl)
