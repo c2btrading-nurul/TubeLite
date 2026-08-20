@@ -61,7 +61,10 @@ fun ChannelScreen(channelUrl: String, onVideoSelected: (VideoResult) -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(c.videos) { v ->
                 Row(Modifier.fillMaxWidth().clickable { onVideoSelected(v) }) {
-                    AsyncImage(model = v.thumbnailUrl, contentDescription = null, modifier = Modifier.width(140.dp).height(80.dp))
+                    VideoThumbnail(
+                        video = v,
+                        modifier = Modifier.width(140.dp).height(80.dp)
+                    )
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(v.title, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
