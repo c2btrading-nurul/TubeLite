@@ -21,7 +21,7 @@ import com.google.android.gms.common.api.ApiException
 import com.tubelite.app.data.WatchHistoryStore
 
 // ⚠️ এখানে আপনার Google Cloud Console-এর "Web application" OAuth Client ID বসান
-private const val GOOGLE_WEB_CLIENT_ID = "589642199852-2bg3kaavp6iqrbs399mqfjit8fmjrlr9.apps.googleusercontent.com"
+private const val GOOGLE_WEB_CLIENT_ID = "1096504902995-m0ojsj4alrhosra2hdjlr2v0uj8ug4el.apps.googleusercontent.com"
 
 @Composable
 fun ProfileScreen(
