@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Image
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
@@ -22,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +32,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import com.tubelite.app.data.AppSettingsStore
+import com.tubelite.app.data.AppLanguageStore
 import com.tubelite.app.data.NowPlayingStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.service.PlaybackService
@@ -244,6 +247,12 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                             onAutoplayNextChange = {
                                 autoPlay = it
                                 AppSettingsStore.setAutoplayNextDefault(context, it)
+                            },
+                            language = appLanguage,
+                            onLanguageChange = { language ->
+                                AppLanguageStore.set(context, language)
+                                appLanguage = language
+                                activity?.recreate()
                             }
                         )
                     }
@@ -286,22 +295,32 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     }
                 } else {
                     val title = when {
-                        channelUrl != null -> "চ্যানেল"
-                        playerExpanded -> "প্লে হচ্ছে"
+                        channelUrl != null -> if (appLanguage == AppLanguageStore.ENGLISH) "Channel" else "চ্যানেল"
+                        playerExpanded -> if (appLanguage == AppLanguageStore.ENGLISH) "Now Playing" else "প্লে হচ্ছে"
                         currentTab == BottomTab.HOME -> "TubeLite"
-                        currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
-                        currentTab == BottomTab.SUBSCRIPTIONS -> "সাবস্ক্রিপশন"
-                        currentTab == BottomTab.SAVED -> "সেভ করা"
-                        else -> "প্রোফাইল"
+                        currentTab == BottomTab.HISTORY -> if (appLanguage == AppLanguageStore.ENGLISH) "History" else "হিস্ট্রি"
+                        currentTab == BottomTab.SUBSCRIPTIONS -> if (appLanguage == AppLanguageStore.ENGLISH) "Subscriptions" else "সাবস্ক্রিপশন"
+                        currentTab == BottomTab.SAVED -> if (appLanguage == AppLanguageStore.ENGLISH) "Saved" else "সেভ করা"
+                        else -> if (appLanguage == AppLanguageStore.ENGLISH) "Profile" else "প্রোফাইল"
                     }
-                    Text(
-                        title,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { goHome() }
-                            .padding(start = if (channelUrl != null) 4.dp else 12.dp)
-                    )
+                    Row(
+                        modifier = Modifier.weight(1f).clickable { goHome() },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (currentTab == BottomTab.HOME && channelUrl == null && !playerExpanded) {
+                            Image(
+                                painter = painterResource(com.tubelite.app.R.drawable.ic_tubelite_logo),
+                                contentDescription = "TubeLite",
+                                modifier = Modifier.size(30.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(
+                            title,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = if (channelUrl != null) 4.dp else 0.dp)
+                        )
+                    }
                     IconButton(onClick = { openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
@@ -334,19 +353,19 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BottomBarItem(Icons.Default.Home, "হোম", currentTab == BottomTab.HOME && !showSearch && channelUrl == null) {
+                BottomBarItem(Icons.Default.Home, if (appLanguage == AppLanguageStore.ENGLISH) "Home" else "হোম", currentTab == BottomTab.HOME && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.HOME; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.History, "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch && channelUrl == null) {
+                BottomBarItem(Icons.Default.History, if (appLanguage == AppLanguageStore.ENGLISH) "History" else "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.HISTORY; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.Subscriptions, "সাবস্ক্রিপশন", currentTab == BottomTab.SUBSCRIPTIONS && !showSearch && channelUrl == null) {
+                BottomBarItem(Icons.Default.Subscriptions, if (appLanguage == AppLanguageStore.ENGLISH) "Subscriptions" else "সাবস্ক্রিপশন", currentTab == BottomTab.SUBSCRIPTIONS && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.SUBSCRIPTIONS; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.PlaylistPlay, "সেভ", currentTab == BottomTab.SAVED && !showSearch && channelUrl == null) {
+                BottomBarItem(Icons.Default.PlaylistPlay, if (appLanguage == AppLanguageStore.ENGLISH) "Saved" else "সেভ", currentTab == BottomTab.SAVED && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.SAVED; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.AccountCircle, "প্রোফাইল", currentTab == BottomTab.PROFILE && !showSearch && channelUrl == null) {
+                BottomBarItem(Icons.Default.AccountCircle, if (appLanguage == AppLanguageStore.ENGLISH) "Profile" else "প্রোফাইল", currentTab == BottomTab.PROFILE && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.PROFILE; showSearch = false; playerExpanded = false; channelUrl = null
                 }
             }
