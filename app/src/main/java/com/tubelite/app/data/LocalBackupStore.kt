@@ -28,6 +28,16 @@ object LocalBackupStore {
             }
             put("playlists", playlists)
 
+            val subscriptions = JSONArray()
+            SubscriptionStore.getAll(context).forEach { sub ->
+                subscriptions.put(JSONObject().apply {
+                    put("channelUrl", sub.channelUrl)
+                    put("channelName", sub.channelName)
+                    put("avatarUrl", sub.avatarUrl ?: "")
+                })
+            }
+            put("subscriptions", subscriptions)
+
             val history = JSONArray()
             WatchHistoryStore.getAll(context).forEach { history.put(videoToJson(it)) }
             put("watchHistory", history)
@@ -63,6 +73,23 @@ object LocalBackupStore {
                 val videos = playlists.optJSONArray(name) ?: return@forEach
                 for (i in 0 until videos.length()) {
                     PlaylistStoreRaw.addVideo(context, name, jsonToVideo(videos.getJSONObject(i)))
+                }
+            }
+        }
+
+        root.optJSONArray("subscriptions")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val url = o.optString("channelUrl")
+                if (url.isNotBlank()) {
+                    SubscriptionStore.subscribe(
+                        context,
+                        Subscription(
+                            channelUrl = url,
+                            channelName = o.optString("channelName"),
+                            avatarUrl = o.optString("avatarUrl").ifBlank { null }
+                        )
+                    )
                 }
             }
         }
