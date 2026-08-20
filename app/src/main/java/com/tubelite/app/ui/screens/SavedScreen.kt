@@ -82,7 +82,10 @@ fun SavedScreen(onPlayPlaylist: (List<VideoResult>, Int) -> Unit) {
                             Modifier.fillMaxWidth().clickable { onPlayPlaylist(videos, index) },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AsyncImage(model = v.thumbnailUrl, contentDescription = null, modifier = Modifier.width(120.dp).height(70.dp))
+                            VideoThumbnail(
+                                video = v,
+                                modifier = Modifier.width(120.dp).height(70.dp)
+                            )
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(v.title, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
