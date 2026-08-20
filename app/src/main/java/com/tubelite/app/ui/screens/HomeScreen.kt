@@ -14,7 +14,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.tubelite.app.data.SearchHistoryStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
@@ -94,9 +93,8 @@ private fun HomeFeedCard(video: VideoResult, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(bottom = 16.dp)
     ) {
-        AsyncImage(
-            model = video.thumbnailUrl,
-            contentDescription = null,
+        VideoThumbnail(
+            video = video,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxWidth()
