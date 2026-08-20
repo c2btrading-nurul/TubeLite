@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -14,37 +15,75 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.tubelite.app.data.SearchHistoryStore
+import com.tubelite.app.data.SubscriptionStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 @Composable
 fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     var recommended by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var trending by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
+    var subscriptionVideos by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var loadRound by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        scope.launch {
+    suspend fun loadFeeds(round: Int) {
+        val history = SearchHistoryStore.getRecent(context, 5)
+        val personalized = mutableListOf<VideoResult>()
+        for (q in history) {
             try {
-                val history = SearchHistoryStore.getRecent(context, 5)
-                val personalized = mutableListOf<VideoResult>()
-                for (q in history) {
-                    try {
-                        personalized += YoutubeRepository.search(q, maxItems = 20)
-                    } catch (_: Exception) { /* skip a failed query */ }
+                personalized += YoutubeRepository.search(q, maxItems = 20 * round)
+            } catch (_: Exception) { }
+        }
+        val trendingList = YoutubeRepository.getTrending(maxItems = 40 * round)
+        val subscribed = mutableListOf<VideoResult>()
+        SubscriptionStore.getAll(context).forEach { sub ->
+            try {
+                subscribed += YoutubeRepository.getChannelVideos(sub.channelUrl, maxItems = 8)
+            } catch (_: Exception) { }
+        }
+        recommended = personalized.distinctBy { it.url }
+        subscriptionVideos = subscribed.distinctBy { it.url }
+        trending = trendingList
+            .filterNot { t -> recommended.any { it.url == t.url } }
+            .filterNot { t -> subscriptionVideos.any { it.url == t.url } }
+            .distinctBy { it.url }
+    }
+
+    LaunchedEffect(Unit) {
+        try {
+            loadFeeds(1)
+        } catch (e: Exception) {
+            error = e.message ?: "লোড করা যায়নি"
+        } finally {
+            loading = false
+        }
+    }
+
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = listState.layoutInfo.totalItemsCount
+            total > 0 && last >= total - 5
+        }.collect { nearEnd ->
+            if (nearEnd && !loading && !loadingMore) {
+                loadingMore = true
+                try {
+                    loadRound += 1
+                    loadFeeds(loadRound)
+                } catch (_: Exception) {
+                    // আগের ভিডিওগুলো রেখেই পরেরবার আবার চেষ্টা করা যাবে
+                } finally {
+                    loadingMore = false
                 }
-                val trendingList = YoutubeRepository.getTrending(maxItems = 40)
-                recommended = personalized.distinctBy { it.url }
-                trending = trendingList.filterNot { t -> recommended.any { it.url == t.url } }
-            } catch (e: Exception) {
-                error = e.message ?: "লোড করা যায়নি"
-            } finally {
-                loading = false
             }
         }
     }
@@ -63,7 +102,23 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
         return
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        if (subscriptionVideos.isNotEmpty()) {
+            item {
+                Text(
+                    "আপনার সাবস্ক্রিপশন থেকে",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
+                )
+            }
+            items(subscriptionVideos, key = { "subscription_${it.url}" }) { video ->
+                HomeFeedCard(video) { onVideoSelected(video) }
+            }
+        }
+
         if (recommended.isNotEmpty()) {
             item {
                 Text(
@@ -72,7 +127,9 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
                     modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
                 )
             }
-            items(recommended) { video -> HomeFeedCard(video) { onVideoSelected(video) } }
+            items(recommended, key = { "recommended_${it.url}" }) { video ->
+                HomeFeedCard(video) { onVideoSelected(video) }
+            }
         }
         item {
             Text(
@@ -81,7 +138,19 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
                 modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp)
             )
         }
-        items(trending) { video -> HomeFeedCard(video) { onVideoSelected(video) } }
+        items(trending, key = { "trending_${it.url}" }) { video ->
+            HomeFeedCard(video) { onVideoSelected(video) }
+        }
+        if (loadingMore) {
+            item {
+                Box(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    contentAlignment = androidx.compose.ui.Alignment.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                }
+            }
+        }
     }
 }
 
@@ -93,13 +162,34 @@ private fun HomeFeedCard(video: VideoResult, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(bottom = 16.dp)
     ) {
-        VideoThumbnail(
-            video = video,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-        )
+        ) {
+            AsyncImage(
+                model = video.thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            val duration = formatDuration(video.durationSeconds)
+            if (duration.isNotEmpty()) {
+                Text(
+                    duration,
+                    color = androidx.compose.ui.graphics.Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .align(androidx.compose.ui.Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
+                            MaterialTheme.shapes.small
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                )
+            }
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -123,4 +213,14 @@ private fun HomeFeedCard(video: VideoResult, onClick: () -> Unit) {
             }
         }
     }
+}
+
+private fun formatDuration(totalSeconds: Long): String {
+    if (totalSeconds <= 0) return ""
+    val seconds = totalSeconds.toInt()
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    val secs = seconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, secs)
+    else "%d:%02d".format(minutes, secs)
 }
