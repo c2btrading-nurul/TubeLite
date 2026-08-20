@@ -9,17 +9,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -33,16 +32,17 @@ import com.tubelite.app.data.AppSettingsStore
 import com.tubelite.app.data.NowPlayingStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.service.PlaybackService
+import com.tubelite.app.ui.screens.ChannelScreen
 import com.tubelite.app.ui.screens.HistoryScreen
 import com.tubelite.app.ui.screens.HomeScreen
 import com.tubelite.app.ui.screens.MiniPlayerBar
 import com.tubelite.app.ui.screens.PlayerScreen
+import com.tubelite.app.ui.screens.ProfileScreen
 import com.tubelite.app.ui.screens.SavedScreen
 import com.tubelite.app.ui.screens.SearchScreen
-import com.tubelite.app.ui.screens.SettingsScreen
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
-private enum class BottomTab { HOME, HISTORY, SAVED, SETTINGS }
+private enum class BottomTab { HOME, HISTORY, SAVED, PROFILE }
 
 private val TOP_BAR_HEIGHT = 52.dp
 private val BOTTOM_BAR_HEIGHT = 56.dp
@@ -86,6 +86,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var queue by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var queueIndex by remember { mutableStateOf(-1) }
     var currentTab by remember { mutableStateOf(BottomTab.HOME) }
+    var channelUrl by remember { mutableStateOf<String?>(null) }
 
     var controller by remember { mutableStateOf<MediaController?>(null) }
 
@@ -112,29 +113,36 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         showSearch = false
         playerExpanded = false
         isFullscreen = false
+        channelUrl = null
     }
 
     fun openSearch() {
         playerExpanded = false
         isFullscreen = false
+        channelUrl = null
         showSearch = true
     }
 
-    fun playVideo(v: VideoResult, addToHistory: Boolean = true) {
+    fun playVideo(v: VideoResult, addToHistory: Boolean = true, clearQueue: Boolean = true) {
         val current = nowPlaying
         if (addToHistory && current != null && current.url != v.url) {
             playHistory = playHistory + current
         }
         if (v.url != nowPlaying?.url) preparedUrl = null
+        if (clearQueue) {
+            queue = emptyList()
+            queueIndex = -1
+        }
         nowPlaying = v
         playerExpanded = true
         showSearch = false
+        channelUrl = null
     }
 
     fun playFromQueue(list: List<VideoResult>, index: Int) {
         queue = list
         queueIndex = index
-        playVideo(list[index])
+        playVideo(list[index], clearQueue = false)
     }
 
     fun playPrevious() {
@@ -143,16 +151,10 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         playVideo(prev, addToHistory = false)
     }
 
-    fun playNextInQueue() {
-        if (queueIndex in 0 until queue.lastIndex) {
-            queueIndex += 1
-            playVideo(queue[queueIndex], addToHistory = true)
-        }
-    }
-
     BackHandler(enabled = true) {
         when {
             isFullscreen -> isFullscreen = false
+            channelUrl != null -> channelUrl = null
             playerExpanded -> playerExpanded = false
             showSearch -> showSearch = false
             controller?.isPlaying == true -> showExitConfirm = true
@@ -184,7 +186,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     val video = nowPlaying
 
     Box(Modifier.fillMaxSize()) {
-        // ---- মূল কনটেন্ট (বার-গুলোর জন্য প্যাডিং রেখে, তাই স্ক্রল করার সময় সত্যিকারের glass effect দেখা যাবে) ----
         Box(
             Modifier
                 .fillMaxSize()
@@ -193,42 +194,48 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     bottom = if (isFullscreen) 0.dp else BOTTOM_BAR_HEIGHT
                 )
         ) {
-            if (playerExpanded && video != null) {
-                PlayerScreen(
-                    video = video,
-                    controller = controller,
-                    autoPlayEnabled = autoPlay,
-                    isFullscreen = isFullscreen,
-                    alreadyPrepared = preparedUrl == video.url,
-                    onPrepared = { preparedUrl = it },
-                    hasPrevious = playHistory.isNotEmpty(),
-                    onPrevious = { playPrevious() },
-                    hasNext = queueIndex in 0 until queue.lastIndex,
-                    onNext = { playNextInQueue() },
-                    queueNextVideo = queue.getOrNull(queueIndex + 1),
-                    onFullscreenChange = { isFullscreen = it },
-                    onRelatedSelected = { playVideo(it) }
-                )
-            } else if (!isFullscreen) {
-                when {
-                    showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
-                    currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
-                    currentTab == BottomTab.HISTORY -> HistoryScreen(onVideoSelected = { playVideo(it) })
-                    currentTab == BottomTab.SAVED -> SavedScreen(onPlayPlaylist = { list, idx -> playFromQueue(list, idx) })
-                    currentTab == BottomTab.SETTINGS -> SettingsScreen(
-                        darkMode = darkMode,
-                        onDarkModeChange = onDarkModeChange,
-                        autoplayNext = autoPlay,
-                        onAutoplayNextChange = {
-                            autoPlay = it
-                            AppSettingsStore.setAutoplayNextDefault(context, it)
-                        }
+            when {
+                playerExpanded && video != null -> {
+                    PlayerScreen(
+                        video = video,
+                        controller = controller,
+                        autoPlayEnabled = autoPlay,
+                        isFullscreen = isFullscreen,
+                        alreadyPrepared = preparedUrl == video.url,
+                        onPrepared = { preparedUrl = it },
+                        hasPrevious = playHistory.isNotEmpty(),
+                        onPrevious = { playPrevious() },
+                        queue = queue,
+                        queueIndex = queueIndex,
+                        onQueueJump = { idx -> playFromQueue(queue, idx) },
+                        onFullscreenChange = { isFullscreen = it },
+                        onRelatedSelected = { playVideo(it) },
+                        onChannelSelected = { url -> channelUrl = url; playerExpanded = false }
                     )
+                }
+                !isFullscreen && channelUrl != null -> {
+                    ChannelScreen(channelUrl = channelUrl!!, onVideoSelected = { playVideo(it) })
+                }
+                !isFullscreen -> {
+                    when {
+                        showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
+                        currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
+                        currentTab == BottomTab.HISTORY -> HistoryScreen(onVideoSelected = { playVideo(it) })
+                        currentTab == BottomTab.SAVED -> SavedScreen(onPlayPlaylist = { list, idx -> playFromQueue(list, idx) })
+                        currentTab == BottomTab.PROFILE -> ProfileScreen(
+                            darkMode = darkMode,
+                            onDarkModeChange = onDarkModeChange,
+                            autoplayNext = autoPlay,
+                            onAutoplayNextChange = {
+                                autoPlay = it
+                                AppSettingsStore.setAutoplayNextDefault(context, it)
+                            }
+                        )
+                    }
                 }
             }
         }
 
-        // ---- টপ বার (ভাসমান, গ্লাসি) ----
         if (!isFullscreen) {
             Row(
                 Modifier
@@ -239,17 +246,19 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (showSearch) {
-                    IconButton(onClick = { showSearch = false }) {
+                if (showSearch || channelUrl != null) {
+                    IconButton(onClick = { showSearch = false; channelUrl = null }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
                 val title = when {
                     showSearch -> "সার্চ"
+                    channelUrl != null -> "চ্যানেল"
+                    playerExpanded -> "প্লে হচ্ছে"
                     currentTab == BottomTab.HOME -> "TubeLite"
                     currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
                     currentTab == BottomTab.SAVED -> "সেভ করা"
-                    else -> "সেটিংস"
+                    else -> "প্রোফাইল"
                 }
                 Text(
                     title,
@@ -257,7 +266,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     modifier = Modifier
                         .weight(1f)
                         .clickable { goHome() }
-                        .padding(start = if (showSearch) 4.dp else 12.dp)
+                        .padding(start = if (showSearch || channelUrl != null) 4.dp else 12.dp)
                 )
                 if (!showSearch) {
                     IconButton(onClick = { openSearch() }) {
@@ -267,7 +276,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             }
         }
 
-        // ---- মিনি-প্লেয়ার (বটম বারের ঠিক উপরে) ----
         if (!isFullscreen && video != null && !playerExpanded) {
             MiniPlayerBar(
                 video = video,
@@ -283,7 +291,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             )
         }
 
-        // ---- বটম বার (সবসময় দৃশ্যমান, ভাসমান, গ্লাসি, কমপ্যাক্ট) ----
         if (!isFullscreen) {
             Row(
                 Modifier
@@ -294,17 +301,17 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BottomBarItem(Icons.Default.Home, "হোম", currentTab == BottomTab.HOME && !showSearch) {
-                    currentTab = BottomTab.HOME; showSearch = false; playerExpanded = false
+                BottomBarItem(Icons.Default.Home, "হোম", currentTab == BottomTab.HOME && !showSearch && channelUrl == null) {
+                    currentTab = BottomTab.HOME; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.History, "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch) {
-                    currentTab = BottomTab.HISTORY; showSearch = false; playerExpanded = false
+                BottomBarItem(Icons.Default.History, "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch && channelUrl == null) {
+                    currentTab = BottomTab.HISTORY; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.PlaylistPlay, "সেভ", currentTab == BottomTab.SAVED && !showSearch) {
-                    currentTab = BottomTab.SAVED; showSearch = false; playerExpanded = false
+                BottomBarItem(Icons.Default.PlaylistPlay, "সেভ", currentTab == BottomTab.SAVED && !showSearch && channelUrl == null) {
+                    currentTab = BottomTab.SAVED; showSearch = false; playerExpanded = false; channelUrl = null
                 }
-                BottomBarItem(Icons.Default.Settings, "সেটিংস", currentTab == BottomTab.SETTINGS && !showSearch) {
-                    currentTab = BottomTab.SETTINGS; showSearch = false; playerExpanded = false
+                BottomBarItem(Icons.Default.AccountCircle, "প্রোফাইল", currentTab == BottomTab.PROFILE && !showSearch && channelUrl == null) {
+                    currentTab = BottomTab.PROFILE; showSearch = false; playerExpanded = false; channelUrl = null
                 }
             }
         }
