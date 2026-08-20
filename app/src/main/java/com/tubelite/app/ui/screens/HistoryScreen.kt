@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.WatchHistoryStore
 
@@ -46,10 +45,11 @@ fun HistoryScreen(onVideoSelected: (VideoResult) -> Unit) {
                     Row(
                         Modifier.fillMaxWidth().clickable { onVideoSelected(v) }.padding(vertical = 4.dp)
                     ) {
-                        AsyncImage(
-                            model = v.thumbnailUrl,
-                            contentDescription = null,
-                            modifier = Modifier.width(140.dp).height(80.dp)
+                        VideoThumbnail(
+                            video = v,
+                            modifier = Modifier
+                                .width(140.dp)
+                                .height(80.dp)
                         )
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
