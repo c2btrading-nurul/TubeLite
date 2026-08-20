@@ -31,14 +31,14 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
     LaunchedEffect(Unit) {
         scope.launch {
             try {
-                val history = SearchHistoryStore.getRecent(context, 3)
+                val history = SearchHistoryStore.getRecent(context, 5)
                 val personalized = mutableListOf<VideoResult>()
                 for (q in history) {
                     try {
-                        personalized += YoutubeRepository.search(q).take(6)
+                        personalized += YoutubeRepository.search(q, maxItems = 20)
                     } catch (_: Exception) { /* skip a failed query */ }
                 }
-                val trendingList = YoutubeRepository.getTrending()
+                val trendingList = YoutubeRepository.getTrending(maxItems = 40)
                 recommended = personalized.distinctBy { it.url }
                 trending = trendingList.filterNot { t -> recommended.any { it.url == t.url } }
             } catch (e: Exception) {
