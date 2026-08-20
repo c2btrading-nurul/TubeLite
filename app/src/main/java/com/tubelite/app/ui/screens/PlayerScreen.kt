@@ -10,6 +10,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
+import android.content.Intent
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -178,6 +181,8 @@ fun PlayerScreen(
     var related by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
     var zoomFill by remember { mutableStateOf(false) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
+    var channelAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var channelUrl by remember { mutableStateOf<String?>(null) }
 
     var isPlaying by remember { mutableStateOf(controller?.isPlaying == true) }
     DisposableEffect(controller) {
@@ -204,6 +209,8 @@ fun PlayerScreen(
                 qualities = playable.options
                 audioOptions = playable.audioOptions
                 subtitleOptions = playable.subtitleOptions
+                channelAvatarUrl = playable.channelAvatarUrl
+                channelUrl = playable.channelUrl
                 selectedQuality = playable.options.firstOrNull { it.label == selectedQuality?.label } ?: playable.default
             } catch (_: Exception) { }
             related = YoutubeRepository.getRelated(video.url)
@@ -220,6 +227,8 @@ fun PlayerScreen(
             qualities = playable.options
             audioOptions = playable.audioOptions
             subtitleOptions = playable.subtitleOptions
+            channelAvatarUrl = playable.channelAvatarUrl
+            channelUrl = playable.channelUrl
             selectedQuality = playable.default
 
             controller.setMediaItem(currentMediaItem(playable.default))
@@ -322,6 +331,11 @@ fun PlayerScreen(
                 controller?.pause()
             }
         }
+    }
+
+    val effectiveHasNext = hasNext || related.isNotEmpty()
+    val effectiveOnNext: () -> Unit = {
+        if (hasNext) onNext() else related.firstOrNull()?.let { onRelatedSelected(it) }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -565,17 +579,26 @@ fun PlayerScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = {
-                val q = selectedQuality
-                val url = q?.progressiveUrl ?: q?.videoOnlyUrl
-                if (url != null) {
-                    DownloadHelper.downloadVideo(context, url, streamTitle)
-                    Toast.makeText(context, "ডাউনলোড শুরু হয়েছে", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+            // চ্যানেল লোগো — ট্যাপ করলে ব্রাউজারে চ্যানেল খুলবে
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable {
+                        val url = channelUrl
+                        if (url != null) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    }
+            ) {
+                if (channelAvatarUrl != null) {
+                    AsyncImage(
+                        model = channelAvatarUrl,
+                        contentDescription = "Channel",
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
                 }
-            }) {
-                Icon(Icons.Default.Download, contentDescription = "Download")
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -591,30 +614,44 @@ fun PlayerScreen(
                         modifier = Modifier.size(32.dp)
                     )
                 }
-                if (hasNext) {
-                    IconButton(onClick = onNext) {
+                if (effectiveHasNext) {
+                    IconButton(onClick = effectiveOnNext) {
                         Icon(Icons.Default.SkipNext, contentDescription = "Next")
                     }
                 }
             }
 
-            Box {
-                IconButton(onClick = { saveMenuOpen = true }) {
-                    Icon(Icons.Default.PlaylistAdd, contentDescription = "Add to playlist")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = {
+                    val q = selectedQuality
+                    val url = q?.progressiveUrl ?: q?.videoOnlyUrl
+                    if (url != null) {
+                        DownloadHelper.downloadVideo(context, url, streamTitle)
+                        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
+                    Icon(Icons.Default.Download, contentDescription = "Download")
                 }
-                DropdownMenu(expanded = saveMenuOpen, onDismissRequest = { saveMenuOpen = false }) {
-                    com.tubelite.app.data.PlaylistStore.getPlaylistNames(context).forEach { name ->
-                        DropdownMenuItem(text = { Text(name) }, onClick = {
-                            com.tubelite.app.data.PlaylistStore.addVideo(context, name, video)
+                Box {
+                    IconButton(onClick = { saveMenuOpen = true }) {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = "Add to playlist")
+                    }
+                    DropdownMenu(expanded = saveMenuOpen, onDismissRequest = { saveMenuOpen = false }) {
+                        com.tubelite.app.data.PlaylistStore.getPlaylistNames(context).forEach { name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                com.tubelite.app.data.PlaylistStore.addVideo(context, name, video)
+                                saveMenuOpen = false
+                                Toast.makeText(context, "\"$name\"-এ যোগ হলো", Toast.LENGTH_SHORT).show()
+                            })
+                        }
+                        Divider()
+                        DropdownMenuItem(text = { Text("+ নতুন প্লে-লিস্ট") }, onClick = {
                             saveMenuOpen = false
-                            Toast.makeText(context, "\"$name\"-এ যোগ হলো", Toast.LENGTH_SHORT).show()
+                            showNewPlaylistDialog = true
                         })
                     }
-                    Divider()
-                    DropdownMenuItem(text = { Text("+ নতুন প্লে-লিস্ট") }, onClick = {
-                        saveMenuOpen = false
-                        showNewPlaylistDialog = true
-                    })
                 }
             }
         }
