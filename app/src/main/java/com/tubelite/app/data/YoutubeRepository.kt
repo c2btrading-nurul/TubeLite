@@ -99,11 +99,24 @@ object YoutubeRepository {
 
     suspend fun getChannel(channelUrl: String): ChannelInfo = withContext(Dispatchers.IO) {
         ensureInit()
-        val extractor = ServiceList.YouTube.getChannelExtractor(channelUrl)
-        extractor.fetchPage()
-        val videos = extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
-        val avatar = try { extractor.avatars?.firstOrNull()?.url } catch (e: Exception) { null }
-        ChannelInfo(extractor.name ?: "", avatar, videos)
+        val channelExtractor = ServiceList.YouTube.getChannelExtractor(channelUrl)
+        channelExtractor.fetchPage()
+        val name = channelExtractor.name ?: ""
+        val avatar = try { channelExtractor.avatars?.firstOrNull()?.url } catch (e: Exception) { null }
+
+        val videosTabHandler = channelExtractor.tabs.firstOrNull {
+            it.contentFilters.contains(org.schabi.newpipe.extractor.channel.tabs.ChannelTabs.VIDEOS)
+        }
+
+        val videos = if (videosTabHandler != null) {
+            val tabExtractor = ServiceList.YouTube.getChannelTabExtractor(videosTabHandler)
+            tabExtractor.fetchPage()
+            tabExtractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
+        } else {
+            emptyList()
+        }
+
+        ChannelInfo(name, avatar, videos)
     }
 
     suspend fun getPlayableStream(videoUrl: String): PlayableStream = withContext(Dispatchers.IO) {
