@@ -125,3 +125,4 @@ fun ProfileScreen(
         OutlinedButton(onClick = { WatchHistoryStore.clear(context) }) { Text("দেখার ইতিহাস মুছুন") }
     }
 }
+ 
