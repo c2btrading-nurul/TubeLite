@@ -1,6 +1,7 @@
 package com.tubelite.app.ui.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,13 +9,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import com.tubelite.app.data.SearchHistoryStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
@@ -94,9 +95,8 @@ private fun VideoRow(video: VideoResult, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(8.dp)
     ) {
-        AsyncImage(
-            model = video.thumbnailUrl,
-            contentDescription = null,
+        VideoThumbnail(
+            video = video,
             modifier = Modifier
                 .width(140.dp)
                 .height(80.dp)
@@ -111,6 +111,132 @@ private fun VideoRow(video: VideoResult, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun InlineSearchPanel(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onVideoSelected: (VideoResult) -> Unit,
+    searchRequestToken: Int = 0,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var results by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var history by remember { mutableStateOf(SearchHistoryStore.getRecent(context, 10)) }
+    val scope = rememberCoroutineScope()
+
+    fun runSearch(searchQuery: String = query) {
+        val q = searchQuery.trim()
+        if (q.isEmpty()) return
+        onQueryChange(q)
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                results = YoutubeRepository.search(q)
+                SearchHistoryStore.add(context, q)
+                history = SearchHistoryStore.getRecent(context, 10)
+            } catch (e: Exception) {
+                error = e.message ?: "সার্চ করা যায়নি"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    LaunchedEffect(searchRequestToken) {
+        if (searchRequestToken > 0) runSearch()
+    }
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        if (query.isBlank() && results.isEmpty()) {
+            if (history.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "সার্চ হিস্ট্রি",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = {
+                        SearchHistoryStore.clear(context)
+                        history = emptyList()
+                    }) {
+                        Text("সব মুছুন")
+                    }
+                }
+
+                history.forEach { item ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { runSearch(item) }
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            androidx.compose.material.icons.Icons.Default.History,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(item, maxLines = 1, modifier = Modifier.weight(1f))
+                    }
+                }
+            } else {
+                Text(
+                    "আপনার সাম্প্রতিক সার্চ এখানে দেখা যাবে",
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+
+        if (loading) {
+            Box(
+                Modifier.fillMaxWidth().padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        error?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(8.dp)
+            )
+        }
+
+        if (results.isNotEmpty()) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(results) { video ->
+                    VideoRow(video) {
+                        onVideoSelected(video)
+                        onClose()
+                    }
+                }
+            }
         }
     }
 }
