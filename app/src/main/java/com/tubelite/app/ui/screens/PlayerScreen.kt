@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.Toast
 import android.content.Intent
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedVisibility
@@ -153,11 +154,12 @@ fun PlayerScreen(
     onPrepared: (String) -> Unit,
     hasPrevious: Boolean,
     onPrevious: () -> Unit,
-    hasNext: Boolean,
-    onNext: () -> Unit,
-    queueNextVideo: VideoResult?,
+    queue: List<VideoResult>,
+    queueIndex: Int,
+    onQueueJump: (Int) -> Unit,
     onFullscreenChange: (Boolean) -> Unit,
-    onRelatedSelected: (VideoResult) -> Unit
+    onRelatedSelected: (VideoResult) -> Unit,
+    onChannelSelected: (String) -> Unit
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
@@ -249,13 +251,16 @@ fun PlayerScreen(
         related = YoutubeRepository.getRelated(video.url)
     }
 
-    DisposableEffect(controller, related, autoPlayEnabled) {
+    DisposableEffect(controller, related, autoPlayEnabled, queue, queueIndex) {
         if (controller == null) return@DisposableEffect onDispose {}
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && autoPlayEnabled) {
-                    val next = queueNextVideo ?: related.firstOrNull()
-                    next?.let { onRelatedSelected(it) }
+                    if (queueIndex in 0 until queue.lastIndex) {
+                        onQueueJump(queueIndex + 1)
+                    } else {
+                        related.firstOrNull()?.let { onRelatedSelected(it) }
+                    }
                 }
             }
         }
@@ -333,9 +338,10 @@ fun PlayerScreen(
         }
     }
 
-    val effectiveHasNext = hasNext || related.isNotEmpty()
+    val effectiveHasNext = (queueIndex in 0 until queue.lastIndex) || related.isNotEmpty()
     val effectiveOnNext: () -> Unit = {
-        if (hasNext) onNext() else related.firstOrNull()?.let { onRelatedSelected(it) }
+        if (queueIndex in 0 until queue.lastIndex) onQueueJump(queueIndex + 1)
+        else related.firstOrNull()?.let { onRelatedSelected(it) }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -586,10 +592,7 @@ fun PlayerScreen(
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surface)
                     .clickable {
-                        val url = channelUrl
-                        if (url != null) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
+                        channelUrl?.let { onChannelSelected(it) }
                     }
             ) {
                 if (channelAvatarUrl != null) {
@@ -658,6 +661,39 @@ fun PlayerScreen(
 
         Spacer(Modifier.height(12.dp))
 
+        if (queue.isNotEmpty()) {
+            Text(
+                "প্লে-লিস্ট থেকে পরবর্তী",
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .heightIn(max = 220.dp)
+                    .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+            ) {
+                queue.forEachIndexed { idx, v ->
+                    val isCurrent = idx == queueIndex
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onQueueJump(idx) }
+                            .background(if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent)
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${idx + 1}", modifier = Modifier.width(22.dp), style = MaterialTheme.typography.bodySmall)
+                        AsyncImage(model = v.thumbnailUrl, contentDescription = null, modifier = Modifier.width(100.dp).height(56.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(v.title, maxLines = 2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
         if (related.isNotEmpty()) {
             Text(
                 "সম্পর্কিত ভিডিও",
