@@ -183,3 +183,4 @@ object CloudSync {
         durationSeconds = o.optLong("durationSeconds")
     )
 }
+ 
