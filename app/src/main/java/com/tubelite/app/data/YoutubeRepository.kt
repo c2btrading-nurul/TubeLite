@@ -40,7 +40,9 @@ data class PlayableStream(
     val options: List<QualityOption>,
     val audioOptions: List<AudioOption>,
     val subtitleOptions: List<SubtitleOption>,
-    val thumbnailUrl: String?
+    val thumbnailUrl: String?,
+    val channelAvatarUrl: String?,
+    val channelUrl: String?
 )
 
 object YoutubeRepository {
@@ -136,6 +138,9 @@ object YoutubeRepository {
             emptyList()
         }
 
-        PlayableStream(info.name, allOptions.first(), allOptions, audioOptions, subtitleOptions, thumb)
+        val channelAvatar = try { info.uploaderAvatars?.firstOrNull()?.url } catch (e: Exception) { null }
+        val channelUrl = try { info.uploaderUrl } catch (e: Exception) { null }
+
+        PlayableStream(info.name, allOptions.first(), allOptions, audioOptions, subtitleOptions, thumb, channelAvatar, channelUrl)
     }
 }
