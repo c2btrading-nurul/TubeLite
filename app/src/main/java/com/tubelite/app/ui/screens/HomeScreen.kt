@@ -167,28 +167,10 @@ private fun HomeFeedCard(video: VideoResult, onClick: () -> Unit) {
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
         ) {
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
+            VideoThumbnail(
+                video = video,
                 modifier = Modifier.fillMaxSize()
             )
-            val duration = formatDuration(video.durationSeconds)
-            if (duration.isNotEmpty()) {
-                Text(
-                    duration,
-                    color = androidx.compose.ui.graphics.Color.White,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier
-                        .align(androidx.compose.ui.Alignment.BottomEnd)
-                        .padding(6.dp)
-                        .background(
-                            androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.8f),
-                            MaterialTheme.shapes.small
-                        )
-                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                )
-            }
         }
         Row(
             Modifier
@@ -215,12 +197,3 @@ private fun HomeFeedCard(video: VideoResult, onClick: () -> Unit) {
     }
 }
 
-private fun formatDuration(totalSeconds: Long): String {
-    if (totalSeconds <= 0) return ""
-    val seconds = totalSeconds.toInt()
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, secs)
-    else "%d:%02d".format(minutes, secs)
-}
