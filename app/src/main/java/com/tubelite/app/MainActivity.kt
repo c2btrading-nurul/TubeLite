@@ -7,7 +7,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -15,6 +14,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,9 +24,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -43,10 +40,11 @@ import com.tubelite.app.ui.screens.MiniPlayerBar
 import com.tubelite.app.ui.screens.PlayerScreen
 import com.tubelite.app.ui.screens.ProfileScreen
 import com.tubelite.app.ui.screens.SavedScreen
-import com.tubelite.app.ui.screens.InlineSearchPanel
+import com.tubelite.app.ui.screens.SubscriptionScreen
+import com.tubelite.app.ui.screens.SearchScreen
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
-private enum class BottomTab { HOME, HISTORY, SAVED, PROFILE }
+private enum class BottomTab { HOME, HISTORY, SUBSCRIPTIONS, SAVED, PROFILE }
 
 private val TOP_BAR_HEIGHT = 52.dp
 private val BOTTOM_BAR_HEIGHT = 56.dp
@@ -83,8 +81,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var playerExpanded by remember { mutableStateOf(false) }
     var autoPlay by remember { mutableStateOf(AppSettingsStore.isAutoplayNextDefault(context)) }
     var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchRequestToken by remember { mutableStateOf(0) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var preparedUrl by remember { mutableStateOf<String?>(null) }
@@ -117,7 +113,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     fun goHome() {
         currentTab = BottomTab.HOME
         showSearch = false
-        searchQuery = ""
         playerExpanded = false
         isFullscreen = false
         channelUrl = null
@@ -143,7 +138,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         nowPlaying = v
         playerExpanded = true
         showSearch = false
-        searchQuery = ""
         channelUrl = null
     }
 
@@ -154,13 +148,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     }
 
     fun playPrevious() {
-        // Playlist/queue-এর মধ্যে থাকলে আগে playlist-এর আগের ভিডিও চালাবে
-        if (queueIndex > 0 && queue.isNotEmpty()) {
-            playFromQueue(queue, queueIndex - 1)
-            return
-        }
-    
-        // Playlist-এর প্রথম ভিডিও হলে এরপর playback history থেকে আগের ভিডিও
         val prev = playHistory.lastOrNull() ?: return
         playHistory = playHistory.dropLast(1)
         playVideo(prev, addToHistory = false)
@@ -169,11 +156,9 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     BackHandler(enabled = true) {
         when {
             isFullscreen -> isFullscreen = false
-            channelUrl != null -> channelUrl = null
-            playerExpanded -> playerExpanded = false
-            showSearch -> {
-                showSearch = false
-                searchQuery = ""
+            currentTab != BottomTab.HOME || showSearch || channelUrl != null || playerExpanded -> {
+                // Home ছাড়া যেকোনো জায়গা থেকে Back = প্রথমে Home।
+                goHome()
             }
             controller?.isPlaying == true -> showExitConfirm = true
             else -> activity?.finish()
@@ -221,7 +206,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         isFullscreen = isFullscreen,
                         alreadyPrepared = preparedUrl == video.url,
                         onPrepared = { preparedUrl = it },
-                        hasPrevious = queueIndex > 0 || playHistory.isNotEmpty(),
+                        hasPrevious = playHistory.isNotEmpty(),
                         onPrevious = { playPrevious() },
                         queue = queue,
                         queueIndex = queueIndex,
@@ -236,8 +221,13 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 }
                 !isFullscreen -> {
                     when {
+                        showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.HISTORY -> HistoryScreen(onVideoSelected = { playVideo(it) })
+                        currentTab == BottomTab.SUBSCRIPTIONS -> SubscriptionScreen(
+                            onVideoSelected = { playVideo(it) },
+                            onChannelSelected = { url -> channelUrl = url }
+                        )
                         currentTab == BottomTab.SAVED -> SavedScreen(onPlayPlaylist = { list, idx -> playFromQueue(list, idx) })
                         currentTab == BottomTab.PROFILE -> ProfileScreen(
                             darkMode = darkMode,
@@ -259,81 +249,38 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .fillMaxWidth()
                     .height(TOP_BAR_HEIGHT)
                     .align(Alignment.TopCenter)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showSearch || channelUrl != null) {
-                    IconButton(onClick = {
-                        showSearch = false
-                        searchQuery = ""
-                        channelUrl = null
-                    }) {
+                    IconButton(onClick = { showSearch = false; channelUrl = null }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
-
-                if (showSearch) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("ভিডিও সার্চ করুন...") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(22.dp),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(
-                            onSearch = { searchRequestToken++ }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
-                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                    IconButton(onClick = { searchRequestToken++ }) {
+                val title = when {
+                    showSearch -> "সার্চ"
+                    channelUrl != null -> "চ্যানেল"
+                    playerExpanded -> "প্লে হচ্ছে"
+                    currentTab == BottomTab.HOME -> "TubeLite"
+                    currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
+                    currentTab == BottomTab.SUBSCRIPTIONS -> "সাবস্ক্রিপশন"
+                    currentTab == BottomTab.SAVED -> "সেভ করা"
+                    else -> "প্রোফাইল"
+                }
+                Text(
+                    title,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { goHome() }
+                        .padding(start = if (showSearch || channelUrl != null) 4.dp else 12.dp)
+                )
+                if (!showSearch) {
+                    IconButton(onClick = { openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
-                } else {
-                    val title = when {
-                        channelUrl != null -> "চ্যানেল"
-                        playerExpanded -> "প্লে হচ্ছে"
-                        currentTab == BottomTab.HOME -> "TubeLite"
-                        currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
-                        currentTab == BottomTab.SAVED -> "সেভ করা"
-                        else -> "প্রোফাইল"
-                    }
-                    Text(
-                        title,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { goHome() }
-                            .padding(start = if (channelUrl != null) 4.dp else 12.dp)
-                    )
-                    if (channelUrl == null) {
-                        IconButton(onClick = { openSearch() }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                    }
                 }
-            }
-
-            if (showSearch) {
-                InlineSearchPanel(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    onVideoSelected = { playVideo(it) },
-                    searchRequestToken = searchRequestToken,
-                    onClose = {
-                        showSearch = false
-                        searchQuery = ""
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .padding(top = TOP_BAR_HEIGHT, bottom = BOTTOM_BAR_HEIGHT)
-                        .align(Alignment.TopCenter)
-                )
             }
         }
 
@@ -367,6 +314,9 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 }
                 BottomBarItem(Icons.Default.History, "হিস্ট্রি", currentTab == BottomTab.HISTORY && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.HISTORY; showSearch = false; playerExpanded = false; channelUrl = null
+                }
+                BottomBarItem(Icons.Default.Subscriptions, "সাবস্ক্রিপশন", currentTab == BottomTab.SUBSCRIPTIONS && !showSearch && channelUrl == null) {
+                    currentTab = BottomTab.SUBSCRIPTIONS; showSearch = false; playerExpanded = false; channelUrl = null
                 }
                 BottomBarItem(Icons.Default.PlaylistPlay, "সেভ", currentTab == BottomTab.SAVED && !showSearch && channelUrl == null) {
                     currentTab = BottomTab.SAVED; showSearch = false; playerExpanded = false; channelUrl = null
