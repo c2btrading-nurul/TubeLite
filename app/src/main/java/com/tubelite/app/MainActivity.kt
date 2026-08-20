@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
@@ -23,6 +24,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
@@ -39,7 +43,7 @@ import com.tubelite.app.ui.screens.MiniPlayerBar
 import com.tubelite.app.ui.screens.PlayerScreen
 import com.tubelite.app.ui.screens.ProfileScreen
 import com.tubelite.app.ui.screens.SavedScreen
-import com.tubelite.app.ui.screens.SearchScreen
+import com.tubelite.app.ui.screens.InlineSearchPanel
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
 private enum class BottomTab { HOME, HISTORY, SAVED, PROFILE }
@@ -79,6 +83,8 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var playerExpanded by remember { mutableStateOf(false) }
     var autoPlay by remember { mutableStateOf(AppSettingsStore.isAutoplayNextDefault(context)) }
     var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchRequestToken by remember { mutableStateOf(0) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var preparedUrl by remember { mutableStateOf<String?>(null) }
@@ -111,6 +117,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     fun goHome() {
         currentTab = BottomTab.HOME
         showSearch = false
+        searchQuery = ""
         playerExpanded = false
         isFullscreen = false
         channelUrl = null
@@ -136,6 +143,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
         nowPlaying = v
         playerExpanded = true
         showSearch = false
+        searchQuery = ""
         channelUrl = null
     }
 
@@ -156,7 +164,10 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             isFullscreen -> isFullscreen = false
             channelUrl != null -> channelUrl = null
             playerExpanded -> playerExpanded = false
-            showSearch -> showSearch = false
+            showSearch -> {
+                showSearch = false
+                searchQuery = ""
+            }
             controller?.isPlaying == true -> showExitConfirm = true
             else -> activity?.finish()
         }
@@ -218,7 +229,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 }
                 !isFullscreen -> {
                     when {
-                        showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.HISTORY -> HistoryScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.SAVED -> SavedScreen(onPlayPlaylist = { list, idx -> playFromQueue(list, idx) })
@@ -242,37 +252,81 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .fillMaxWidth()
                     .height(TOP_BAR_HEIGHT)
                     .align(Alignment.TopCenter)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (showSearch || channelUrl != null) {
-                    IconButton(onClick = { showSearch = false; channelUrl = null }) {
+                    IconButton(onClick = {
+                        showSearch = false
+                        searchQuery = ""
+                        channelUrl = null
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
-                val title = when {
-                    showSearch -> "সার্চ"
-                    channelUrl != null -> "চ্যানেল"
-                    playerExpanded -> "প্লে হচ্ছে"
-                    currentTab == BottomTab.HOME -> "TubeLite"
-                    currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
-                    currentTab == BottomTab.SAVED -> "সেভ করা"
-                    else -> "প্রোফাইল"
-                }
-                Text(
-                    title,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { goHome() }
-                        .padding(start = if (showSearch || channelUrl != null) 4.dp else 12.dp)
-                )
-                if (!showSearch) {
-                    IconButton(onClick = { openSearch() }) {
+
+                if (showSearch) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("ভিডিও সার্চ করুন...") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(22.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = { searchRequestToken++ }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                            focusedBorderColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                    IconButton(onClick = { searchRequestToken++ }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
+                } else {
+                    val title = when {
+                        channelUrl != null -> "চ্যানেল"
+                        playerExpanded -> "প্লে হচ্ছে"
+                        currentTab == BottomTab.HOME -> "TubeLite"
+                        currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
+                        currentTab == BottomTab.SAVED -> "সেভ করা"
+                        else -> "প্রোফাইল"
+                    }
+                    Text(
+                        title,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { goHome() }
+                            .padding(start = if (channelUrl != null) 4.dp else 12.dp)
+                    )
+                    if (channelUrl == null) {
+                        IconButton(onClick = { openSearch() }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                    }
                 }
+            }
+
+            if (showSearch) {
+                InlineSearchPanel(
+                    query = searchQuery,
+                    onQueryChange = { searchQuery = it },
+                    onVideoSelected = { playVideo(it) },
+                    searchRequestToken = searchRequestToken,
+                    onClose = {
+                        showSearch = false
+                        searchQuery = ""
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .padding(top = TOP_BAR_HEIGHT, bottom = BOTTOM_BAR_HEIGHT)
+                        .align(Alignment.TopCenter)
+                )
             }
         }
 
