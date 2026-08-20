@@ -686,7 +686,10 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("${idx + 1}", modifier = Modifier.width(22.dp), style = MaterialTheme.typography.bodySmall)
-                        AsyncImage(model = v.thumbnailUrl, contentDescription = null, modifier = Modifier.width(100.dp).height(56.dp))
+                        VideoThumbnail(
+                            video = v,
+                            modifier = Modifier.width(100.dp).height(56.dp)
+                        )
                         Spacer(Modifier.width(8.dp))
                         Text(v.title, maxLines = 2, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     }
