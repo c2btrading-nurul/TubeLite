@@ -235,8 +235,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .fillMaxWidth()
                     .height(TOP_BAR_HEIGHT)
                     .align(Alignment.TopCenter)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                    .blur(18.dp)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                     .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -291,8 +290,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .fillMaxWidth()
                     .height(BOTTOM_BAR_HEIGHT)
                     .align(Alignment.BottomCenter)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f))
-                    .blur(18.dp),
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
