@@ -16,15 +16,21 @@ object SearchHistoryStore {
         prefs.edit().putString(KEY, updated.joinToString("||")).apply()
     }
 
-    fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove(KEY)
-            .apply()
-    }
-
     fun getRecent(context: Context, limit: Int = 5): List<String> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         return prefs.getString(KEY, "")?.split("||")?.filter { it.isNotBlank() }?.take(limit) ?: emptyList()
+    }
+
+    fun remove(context: Context, query: String) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val updated = prefs.getString(KEY, "")?.split("||")
+            ?.filter { it.isNotBlank() && !it.equals(query, ignoreCase = true) }
+            ?: emptyList()
+        prefs.edit().putString(KEY, updated.joinToString("||")).apply()
+    }
+
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().remove(KEY).apply()
     }
 }
