@@ -41,7 +41,7 @@ import com.tubelite.app.ui.screens.PlayerScreen
 import com.tubelite.app.ui.screens.ProfileScreen
 import com.tubelite.app.ui.screens.SavedScreen
 import com.tubelite.app.ui.screens.SubscriptionScreen
-import com.tubelite.app.ui.screens.SearchScreen
+import com.tubelite.app.ui.screens.InlineSearchPanel
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
 private enum class BottomTab { HOME, HISTORY, SUBSCRIPTIONS, SAVED, PROFILE }
@@ -81,6 +81,8 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var playerExpanded by remember { mutableStateOf(false) }
     var autoPlay by remember { mutableStateOf(AppSettingsStore.isAutoplayNextDefault(context)) }
     var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchRequestToken by remember { mutableIntStateOf(0) }
     var isFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var preparedUrl by remember { mutableStateOf<String?>(null) }
@@ -221,7 +223,13 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                 }
                 !isFullscreen -> {
                     when {
-                        showSearch -> SearchScreen(onVideoSelected = { playVideo(it) })
+                        showSearch -> InlineSearchPanel(
+                            query = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            searchRequestToken = searchRequestToken,
+                            onVideoSelected = { playVideo(it) },
+                            onClose = { showSearch = false }
+                        )
                         currentTab == BottomTab.HOME -> HomeScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.HISTORY -> HistoryScreen(onVideoSelected = { playVideo(it) })
                         currentTab == BottomTab.SUBSCRIPTIONS -> SubscriptionScreen(
@@ -258,25 +266,42 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
-                val title = when {
-                    showSearch -> "সার্চ"
-                    channelUrl != null -> "চ্যানেল"
-                    playerExpanded -> "প্লে হচ্ছে"
-                    currentTab == BottomTab.HOME -> "TubeLite"
-                    currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
-                    currentTab == BottomTab.SUBSCRIPTIONS -> "সাবস্ক্রিপশন"
-                    currentTab == BottomTab.SAVED -> "সেভ করা"
-                    else -> "প্রোফাইল"
-                }
-                Text(
-                    title,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable { goHome() }
-                        .padding(start = if (showSearch || channelUrl != null) 4.dp else 12.dp)
-                )
-                if (!showSearch) {
+                if (showSearch) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        placeholder = { Text("ভিডিও সার্চ করুন...") },
+                        singleLine = true,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onSearch = { searchRequestToken++ }
+                        )
+                    )
+                    IconButton(onClick = { searchRequestToken++ }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                } else {
+                    val title = when {
+                        channelUrl != null -> "চ্যানেল"
+                        playerExpanded -> "প্লে হচ্ছে"
+                        currentTab == BottomTab.HOME -> "TubeLite"
+                        currentTab == BottomTab.HISTORY -> "হিস্ট্রি"
+                        currentTab == BottomTab.SUBSCRIPTIONS -> "সাবস্ক্রিপশন"
+                        currentTab == BottomTab.SAVED -> "সেভ করা"
+                        else -> "প্রোফাইল"
+                    }
+                    Text(
+                        title,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { goHome() }
+                            .padding(start = if (channelUrl != null) 4.dp else 12.dp)
+                    )
                     IconButton(onClick = { openSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
