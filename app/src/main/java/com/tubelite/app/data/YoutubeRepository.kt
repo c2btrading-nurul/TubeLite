@@ -45,6 +45,12 @@ data class PlayableStream(
     val channelUrl: String?
 )
 
+data class ChannelInfo(
+    val name: String,
+    val avatarUrl: String?,
+    val videos: List<VideoResult>
+)
+
 object YoutubeRepository {
 
     private var initialized = false
@@ -89,6 +95,15 @@ object YoutubeRepository {
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    suspend fun getChannel(channelUrl: String): ChannelInfo = withContext(Dispatchers.IO) {
+        ensureInit()
+        val extractor = ServiceList.YouTube.getChannelExtractor(channelUrl)
+        extractor.fetchPage()
+        val videos = extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { it.toVideoResult() }
+        val avatar = try { extractor.avatars?.firstOrNull()?.url } catch (e: Exception) { null }
+        ChannelInfo(extractor.name ?: "", avatar, videos)
     }
 
     suspend fun getPlayableStream(videoUrl: String): PlayableStream = withContext(Dispatchers.IO) {
