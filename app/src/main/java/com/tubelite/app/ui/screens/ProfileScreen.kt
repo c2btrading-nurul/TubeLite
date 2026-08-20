@@ -19,6 +19,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.tubelite.app.data.CloudSync
+import com.tubelite.app.data.LocalBackupStore
 import com.tubelite.app.data.WatchHistoryStore
 
 private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
@@ -52,6 +53,32 @@ fun ProfileScreen(
                 if (found) "Drive থেকে ডেটা রিস্টোর হয়েছে" else "সাইন-ইন সফল, ডেটা Drive-এ সেভ শুরু হলো",
                 Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                LocalBackupStore.exportTo(context, uri)
+                Toast.makeText(context, "ব্যাকআপ ফাইল তৈরি হয়েছে", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "ব্যাকআপ ব্যর্থ: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val backupImportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                LocalBackupStore.importFrom(context, uri)
+                Toast.makeText(context, "ব্যাকআপ রিস্টোর হয়েছে", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "রিস্টোর ব্যর্থ: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -120,6 +147,23 @@ fun ProfileScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("অটো-প্লে নেক্সট (ডিফল্ট)")
             Switch(checked = autoplayNext, onCheckedChange = onAutoplayNextChange)
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("ব্যাকআপ", fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Google account ছাড়াই একটি JSON ফাইলে সেটিংস, প্লে-লিস্ট, সার্চ হিস্টরি ও দেখার ইতিহাস সংরক্ষণ করতে পারবেন। পরে সেই ফাইল দিয়ে রিস্টোর করা যাবে।",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { backupExportLauncher.launch("tubelite_backup.json") }) {
+                Text("ব্যাকআপ নিন")
+            }
+            OutlinedButton(onClick = { backupImportLauncher.launch(arrayOf("application/json", "text/plain")) }) {
+                Text("রিস্টোর করুন")
+            }
         }
         Spacer(Modifier.height(16.dp))
         OutlinedButton(onClick = { WatchHistoryStore.clear(context) }) { Text("দেখার ইতিহাস মুছুন") }
