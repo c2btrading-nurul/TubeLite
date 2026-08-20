@@ -748,10 +748,11 @@ private fun RelatedVideoRow(video: VideoResult, onClick: () -> Unit) {
             .padding(horizontal = 12.dp)
             .clickable(onClick = onClick)
     ) {
-        AsyncImage(
-            model = video.thumbnailUrl,
-            contentDescription = null,
-            modifier = Modifier.width(140.dp).height(80.dp)
+        VideoThumbnail(
+            video = video,
+            modifier = Modifier
+                .width(140.dp)
+                .height(80.dp)
         )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
