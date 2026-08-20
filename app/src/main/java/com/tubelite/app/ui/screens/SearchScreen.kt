@@ -10,6 +10,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -198,6 +199,12 @@ fun InlineSearchPanel(
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(item, maxLines = 1, modifier = Modifier.weight(1f))
+                        IconButton(onClick = {
+                            SearchHistoryStore.remove(context, item)
+                            history = SearchHistoryStore.getRecent(context, 10)
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "এই সার্চটি মুছুন")
+                        }
                     }
                 }
             } else {
