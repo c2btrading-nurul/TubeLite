@@ -290,7 +290,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     .fillMaxWidth()
                     .height(BOTTOM_BAR_HEIGHT)
                     .align(Alignment.BottomCenter)
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
