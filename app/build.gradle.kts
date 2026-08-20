@@ -70,7 +70,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
     implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-firestore") {
+        exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+    }
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
