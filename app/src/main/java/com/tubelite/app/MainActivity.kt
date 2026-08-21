@@ -211,6 +211,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
 
     BackHandler(enabled = true) {
         when {
+            shortsFullscreen -> shortsFullscreen = false
             isFullscreen -> isFullscreen = false
             currentTab != BottomTab.HOME || showSearch || channelUrl != null || playerExpanded -> {
                 // Home ছাড়া যেকোনো জায়গা থেকে Back = প্রথমে Home।
@@ -349,7 +350,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             }
         }
 
-        if (!isFullscreen) {
+        if (!isFullscreen && !shortsFullscreen) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -432,7 +433,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             )
         }
 
-        if (!isFullscreen) {
+        if (!isFullscreen && !shortsFullscreen) {
             Row(
                 Modifier
                     .fillMaxWidth()
