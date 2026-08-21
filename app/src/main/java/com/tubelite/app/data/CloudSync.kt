@@ -139,6 +139,7 @@ object CloudSync {
 
         root.put("darkMode", AppSettingsStore.isDarkMode(context))
         root.put("autoplayNext", AppSettingsStore.isAutoplayNextDefault(context))
+        root.put("shortsEnabled", AppSettingsStore.isShortsEnabled(context))
 
         return root.toString()
     }
@@ -165,6 +166,7 @@ object CloudSync {
 
         if (root.has("darkMode")) AppSettingsStore.setDarkMode(context, root.getBoolean("darkMode"))
         if (root.has("autoplayNext")) AppSettingsStore.setAutoplayNextDefault(context, root.getBoolean("autoplayNext"))
+        if (root.has("shortsEnabled")) AppSettingsStore.setShortsEnabled(context, root.getBoolean("shortsEnabled"))
     }
 
     private fun videoToJson(v: VideoResult): JSONObject = JSONObject().apply {
