@@ -155,6 +155,13 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     }
 
     fun playPrevious() {
+        // যখন Playlist/queue থেকে ভিডিও চলছে, Previous অবশ্যই
+        // একই Playlist-এর আগের ভিডিওতে যাবে। Related/History-তে যাবে না।
+        if (queueIndex > 0 && queueIndex < queue.size) {
+            playFromQueue(queue, queueIndex - 1)
+            return
+        }
+
         val prev = playHistory.lastOrNull() ?: return
         playHistory = playHistory.dropLast(1)
         playVideo(prev, addToHistory = false)
