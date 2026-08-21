@@ -94,7 +94,9 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var queueIndex by remember { mutableStateOf(-1) }
     var currentTab by remember { mutableStateOf(BottomTab.HOME) }
     var channelUrl by remember { mutableStateOf<String?>(null) }
-
+    
+    var appLanguage by remember { mutableStateOf(AppLanguageStore.get(context)) }
+    
     var controller by remember { mutableStateOf<MediaController?>(null) }
 
     DisposableEffect(Unit) {
