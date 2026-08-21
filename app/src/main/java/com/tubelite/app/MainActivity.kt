@@ -155,15 +155,57 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     }
 
     fun playFromQueue(list: List<VideoResult>, index: Int) {
+        if (list.isEmpty()) return
+        if (index !in list.indices) return
+    
         queue = list
         queueIndex = index
-        playVideo(list[index], clearQueue = false)
+    
+        // Playlist navigation-কে সাধারণ watch history থেকে আলাদা রাখি।
+        playVideo(
+            v = list[index],
+            addToHistory = false,
+            clearQueue = false
+        )
     }
-
+    
+    fun playQueuePrevious() {
+        if (queue.isEmpty()) return
+    
+        val previousIndex = queueIndex - 1
+    
+        if (previousIndex in queue.indices) {
+            playFromQueue(queue, previousIndex)
+        }
+    }
+    
+    fun playQueueNext() {
+        if (queue.isEmpty()) return
+    
+        val nextIndex = queueIndex + 1
+    
+        if (nextIndex in queue.indices) {
+            playFromQueue(queue, nextIndex)
+        }
+    }
+    
     fun playPrevious() {
+        // Playlist-এর ভিতরে থাকলে আগে Playlist Previous কাজ করবে।
+        if (queue.isNotEmpty() && queueIndex > 0) {
+            playQueuePrevious()
+            return
+        }
+    
+        // Playlist না থাকলে সাধারণ ভিডিও history-এর Previous।
         val prev = playHistory.lastOrNull() ?: return
+    
         playHistory = playHistory.dropLast(1)
-        playVideo(prev, addToHistory = false)
+    
+        playVideo(
+            v = prev,
+            addToHistory = false,
+            clearQueue = true
+        )
     }
 
     BackHandler(enabled = true) {
@@ -220,14 +262,38 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         isFullscreen = isFullscreen,
                         alreadyPrepared = preparedUrl == video.url,
                         onPrepared = { preparedUrl = it },
-                        hasPrevious = playHistory.isNotEmpty(),
-                        onPrevious = { playPrevious() },
+                    
+                        hasPrevious = if (queue.isNotEmpty()) {
+                            queueIndex > 0
+                        } else {
+                            playHistory.isNotEmpty()
+                        },
+                    
+                        onPrevious = {
+                            if (queue.isNotEmpty() && queueIndex > 0) {
+                                playQueuePrevious()
+                            } else {
+                                playPrevious()
+                            }
+                        },
+                    
                         queue = queue,
                         queueIndex = queueIndex,
-                        onQueueJump = { idx -> playFromQueue(queue, idx) },
+                    
+                        onQueueJump = { idx ->
+                            playFromQueue(queue, idx)
+                        },
+                    
                         onFullscreenChange = { isFullscreen = it },
-                        onRelatedSelected = { playVideo(it) },
-                        onChannelSelected = { url -> channelUrl = url; playerExpanded = false }
+                    
+                        onRelatedSelected = {
+                            playVideo(it)
+                        },
+                    
+                        onChannelSelected = { url ->
+                            channelUrl = url
+                            playerExpanded = false
+                        }
                     )
                 }
                 !isFullscreen && channelUrl != null -> {
