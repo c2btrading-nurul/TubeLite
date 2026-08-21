@@ -101,6 +101,32 @@ object YoutubeRepository {
         loadMoreItems(extractor, extractor.initialPage, maxItems)
     }
 
+    /**
+     * Returns items that NewPipe/YouTube identifies as short-form content.
+     * We use YouTube search only as discovery; the final filter is
+     * StreamInfoItem.isShortFormContent(), so ordinary short videos are not
+     * treated as Shorts merely because they are under a duration threshold.
+     */
+    suspend fun getShorts(maxItems: Int = 30): List<VideoResult> = withContext(Dispatchers.IO) {
+        ensureInit()
+        val queries = listOf("#shorts", "shorts")
+        val found = mutableListOf<VideoResult>()
+
+        for (query in queries) {
+            if (found.size >= maxItems) break
+            try {
+                val extractor = ServiceList.YouTube.getSearchExtractor(query)
+                extractor.fetchPage()
+                val items = loadMoreItems(extractor, extractor.initialPage, maxItems)
+                found += items.filter { it.isShortFormContent() }
+            } catch (_: Exception) {
+                // Try the next Shorts discovery query.
+            }
+        }
+
+        found.distinctBy { it.url }.take(maxItems)
+    }
+
     suspend fun getTrending(maxItems: Int = 40): List<VideoResult> = withContext(Dispatchers.IO) {
         ensureInit()
         val kioskList = ServiceList.YouTube.kioskList
