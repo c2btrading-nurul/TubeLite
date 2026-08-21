@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,6 +46,7 @@ import com.tubelite.app.ui.screens.ProfileScreen
 import com.tubelite.app.ui.screens.SavedScreen
 import com.tubelite.app.ui.screens.SubscriptionScreen
 import com.tubelite.app.ui.screens.InlineSearchPanel
+import com.tubelite.app.ui.screens.LocalAppLanguage
 import com.tubelite.app.ui.theme.TubeLiteTheme
 
 private enum class BottomTab { HOME, HISTORY, SUBSCRIPTIONS, SAVED, PROFILE }
@@ -155,13 +157,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     }
 
     fun playPrevious() {
-        // যখন Playlist/queue থেকে ভিডিও চলছে, Previous অবশ্যই
-        // একই Playlist-এর আগের ভিডিওতে যাবে। Related/History-তে যাবে না।
-        if (queueIndex > 0 && queueIndex < queue.size) {
-            playFromQueue(queue, queueIndex - 1)
-            return
-        }
-
         val prev = playHistory.lastOrNull() ?: return
         playHistory = playHistory.dropLast(1)
         playVideo(prev, addToHistory = false)
@@ -182,10 +177,10 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     if (showExitConfirm) {
         AlertDialog(
             onDismissRequest = { showExitConfirm = false },
-            title = { Text("ব্যাকগ্রাউন্ডে চালু রাখবেন?") },
-            text = { Text("ভিডিও/অডিও প্লে হচ্ছে। অ্যাপ বন্ধ করার পরও এটা চালু রাখতে চান?") },
+            title = { Text(if (appLanguage == AppLanguageStore.ENGLISH) "Keep playing in background?" else "ব্যাকগ্রাউন্ডে চালু রাখবেন?") },
+            text = { Text(if (appLanguage == AppLanguageStore.ENGLISH) "Video/audio is playing. Do you want to keep it playing after closing the app?" else "ভিডিও/অডিও প্লে হচ্ছে। অ্যাপ বন্ধ করার পরও এটা চালু রাখতে চান?") },
             confirmButton = {
-                TextButton(onClick = { showExitConfirm = false; activity?.finish() }) { Text("ব্যাকগ্রাউন্ডে চালু রাখুন") }
+                TextButton(onClick = { showExitConfirm = false; activity?.finish() }) { Text(if (appLanguage == AppLanguageStore.ENGLISH) "Keep playing in background" else "ব্যাকগ্রাউন্ডে চালু রাখুন") }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -195,14 +190,15 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     NowPlayingStore.clear(context)
                     showExitConfirm = false
                     activity?.finish()
-                }) { Text("বন্ধ করুন") }
+                }) { Text(if (appLanguage == AppLanguageStore.ENGLISH) "Stop and close" else "বন্ধ করুন") }
             }
         )
     }
 
     val video = nowPlaying
 
-    Box(Modifier.fillMaxSize()) {
+    CompositionLocalProvider(LocalAppLanguage provides appLanguage) {
+        Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -261,7 +257,6 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                             onLanguageChange = { language ->
                                 AppLanguageStore.set(context, language)
                                 appLanguage = language
-                                activity?.recreate()
                             }
                         )
                     }
@@ -281,7 +276,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             ) {
                 if (showSearch || channelUrl != null) {
                     IconButton(onClick = { showSearch = false; channelUrl = null }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Default.ArrowBack, contentDescription = if (appLanguage == AppLanguageStore.ENGLISH) "Back" else "পেছনে")
                     }
                 }
                 if (showSearch) {
@@ -289,7 +284,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
                         modifier = Modifier.weight(1f).height(48.dp),
-                        placeholder = { Text("ভিডিও সার্চ করুন...") },
+                        placeholder = { Text(if (appLanguage == AppLanguageStore.ENGLISH) "Search videos..." else "ভিডিও সার্চ করুন...") },
                         singleLine = true,
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
@@ -300,38 +295,26 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                         )
                     )
                     IconButton(onClick = { searchRequestToken++ }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+                        Icon(Icons.Default.Search, contentDescription = if (appLanguage == AppLanguageStore.ENGLISH) "Search" else "সার্চ")
                     }
                 } else {
-                    val title = when {
-                        channelUrl != null -> if (appLanguage == AppLanguageStore.ENGLISH) "Channel" else "চ্যানেল"
-                        playerExpanded -> if (appLanguage == AppLanguageStore.ENGLISH) "Now Playing" else "প্লে হচ্ছে"
-                        currentTab == BottomTab.HOME -> "TubeLite"
-                        currentTab == BottomTab.HISTORY -> if (appLanguage == AppLanguageStore.ENGLISH) "History" else "হিস্ট্রি"
-                        currentTab == BottomTab.SUBSCRIPTIONS -> if (appLanguage == AppLanguageStore.ENGLISH) "Subscriptions" else "সাবস্ক্রিপশন"
-                        currentTab == BottomTab.SAVED -> if (appLanguage == AppLanguageStore.ENGLISH) "Saved" else "সেভ করা"
-                        else -> if (appLanguage == AppLanguageStore.ENGLISH) "Profile" else "প্রোফাইল"
-                    }
                     Row(
                         modifier = Modifier.weight(1f).clickable { goHome() },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (currentTab == BottomTab.HOME && channelUrl == null && !playerExpanded) {
-                            Image(
-                                painter = painterResource(com.tubelite.app.R.drawable.ic_tubelite_logo),
-                                contentDescription = "TubeLite",
-                                modifier = Modifier.size(30.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                        }
+                        Image(
+                            painter = painterResource(com.tubelite.app.R.drawable.ic_tubelite_logo),
+                            contentDescription = "TubeLite",
+                            modifier = Modifier.size(30.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            title,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = if (channelUrl != null) 4.dp else 0.dp)
+                            "TubeLite",
+                            fontWeight = FontWeight.Bold
                         )
                     }
                     IconButton(onClick = { openSearch() }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+                        Icon(Icons.Default.Search, contentDescription = if (appLanguage == AppLanguageStore.ENGLISH) "Search" else "সার্চ")
                     }
                 }
             }
@@ -378,6 +361,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                     currentTab = BottomTab.PROFILE; showSearch = false; playerExpanded = false; channelUrl = null
                 }
             }
+        }
         }
     }
 }
