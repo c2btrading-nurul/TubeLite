@@ -40,7 +40,10 @@ fun ShortsScreen(
 
     suspend fun loadShorts(round: Int) {
         val requested = if (round == 1) 24 else 18
-        val newItems = YoutubeRepository.getShorts(requested * round)
+        val newItems = YoutubeRepository.getPersonalizedShorts(
+            context = context,
+            maxItems = requested * round
+        )
         val existing = shorts.mapTo(mutableSetOf()) { it.url }
         shorts = shorts + newItems.filterNot { it.url in existing }
     }
