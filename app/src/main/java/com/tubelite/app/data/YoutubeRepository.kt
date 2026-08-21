@@ -9,6 +9,7 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import android.content.Context
 
 data class VideoResult(
     val title: String,
@@ -141,45 +142,141 @@ object YoutubeRepository {
      * Instead, YouTube Shorts are discovered through Shorts-oriented
      * search queries and limited to videos up to 3 minutes.
      */
-    suspend fun getShorts(
-        maxItems: Int = 30
-    ): List<VideoResult> = withContext(Dispatchers.IO) {
-        ensureInit()
-
-        val queries = listOf(
-            "#shorts",
-            "shorts",
-            "popular shorts",
-            "trending shorts",
-            "viral shorts"
-        )
-
-        val found = mutableListOf<VideoResult>()
-
-        for (query in queries) {
-            if (found.size >= maxItems) break
-
-            try {
-                val extractor = ServiceList.YouTube.getSearchExtractor(query)
-
-                extractor.fetchPage()
-
-                val items = loadMoreItems(
-                    extractor,
-                    extractor.initialPage,
-                    maxItems
-                )
-
-                found += items.filter { isShortCandidate(it) }
-            } catch (_: Exception) {
-                // Continue with the next discovery query.
+        suspend fun getPersonalizedShorts(
+            context: Context,
+            maxItems: Int = 30
+        ): List<VideoResult> = withContext(Dispatchers.IO) {
+        
+            ensureInit()
+        
+            val recentSearches =
+                SearchHistoryStore
+                    .getRecent(context, 6)
+                    .filter { it.isNotBlank() }
+        
+            val queries =
+                (
+                    recentSearches.flatMap { query ->
+                        listOf(
+                            "$query #shorts",
+                            "$query shorts"
+                        )
+                    } +
+                        listOf(
+                            "#shorts",
+                            "trending shorts",
+                            "viral shorts",
+                            "popular shorts"
+                        )
+                ).distinct()
+        
+            val found =
+                mutableListOf<VideoResult>()
+        
+            for (query in queries) {
+        
+                if (found.size >= maxItems) {
+                    break
+                }
+        
+                try {
+        
+                    val extractor =
+                        ServiceList.YouTube
+                            .getSearchExtractor(query)
+        
+                    extractor.fetchPage()
+        
+                    val items =
+                        loadMoreItems(
+                            extractor,
+                            extractor.initialPage,
+                            maxItems
+                        )
+        
+                    found += items.filter {
+                        it.durationSeconds in 1..180
+                    }
+        
+                } catch (_: Exception) {
+                    // Try the next discovery query.
+                }
             }
+        
+            if (found.size < maxItems) {
+        
+                try {
+        
+                    val trending =
+                        getTrending(
+                            maxItems = maxItems * 2
+                        )
+        
+                    found += trending.filter {
+                        it.durationSeconds in 1..180
+                    }
+        
+                } catch (_: Exception) {
+                    // Keep the personalized results.
+                }
+            }
+        
+            found
+                .distinctBy { it.url }
+                .take(maxItems)
         }
-
-        found
-            .distinctBy { it.url }
-            .take(maxItems)
-    }
+        
+        suspend fun getShorts(
+            maxItems: Int = 30
+        ): List<VideoResult> = withContext(Dispatchers.IO) {
+        
+            ensureInit()
+        
+            val queries =
+                listOf(
+                    "#shorts",
+                    "shorts",
+                    "trending shorts",
+                    "viral shorts"
+                )
+        
+            val found =
+                mutableListOf<VideoResult>()
+        
+            for (query in queries) {
+        
+                if (found.size >= maxItems) {
+                    break
+                }
+        
+                try {
+        
+                    val extractor =
+                        ServiceList.YouTube
+                            .getSearchExtractor(query)
+        
+                    extractor.fetchPage()
+        
+                    val items =
+                        loadMoreItems(
+                            extractor,
+                            extractor.initialPage,
+                            maxItems
+                        )
+        
+                    found += items.filter {
+                        it.durationSeconds in 1..180
+                    }
+        
+                } catch (_: Exception) {
+                    // Continue with the next query.
+                }
+            }
+        
+            found
+                .distinctBy { it.url }
+                .take(maxItems)
+        }
 
     /**
      * Personalized Shorts feed.
