@@ -43,18 +43,38 @@ fun HomeScreen(onVideoSelected: (VideoResult) -> Unit) {
                 personalized += YoutubeRepository.search(q, maxItems = 20 * round)
             } catch (_: Exception) { }
         }
+
         val trendingList = YoutubeRepository.getTrending(maxItems = 40 * round)
         val subscribed = mutableListOf<VideoResult>()
         SubscriptionStore.getAll(context).forEach { sub ->
             try {
-                subscribed += YoutubeRepository.getChannelVideos(sub.channelUrl, maxItems = 8)
+                subscribed += YoutubeRepository.getChannelVideos(sub.channelUrl, maxItems = 8 * round)
             } catch (_: Exception) { }
         }
-        recommended = personalized.distinctBy { it.url }
-        subscriptionVideos = subscribed.distinctBy { it.url }
-        trending = trendingList
-            .filterNot { t -> recommended.any { it.url == t.url } }
-            .filterNot { t -> subscriptionVideos.any { it.url == t.url } }
+
+        val newRecommended = personalized.distinctBy { it.url }
+        val newSubscriptions = subscribed.distinctBy { it.url }
+        val newTrending = trendingList.distinctBy { it.url }
+
+        if (round == 1) {
+            recommended = newRecommended
+            subscriptionVideos = newSubscriptions
+            trending = newTrending
+        } else {
+            val existingRecommended = recommended.mapTo(mutableSetOf()) { it.url }
+            val existingSubscriptions = subscriptionVideos.mapTo(mutableSetOf()) { it.url }
+            val existingTrending = trending.mapTo(mutableSetOf()) { it.url }
+
+            recommended = recommended + newRecommended.filterNot { it.url in existingRecommended }
+            subscriptionVideos = subscriptionVideos + newSubscriptions.filterNot { it.url in existingSubscriptions }
+            trending = trending + newTrending.filterNot { it.url in existingTrending }
+        }
+
+        val subscriptionUrls = subscriptionVideos.mapTo(mutableSetOf()) { it.url }
+        val recommendedUrls = recommended.mapTo(mutableSetOf()) { it.url }
+        trending = trending
+            .filterNot { it.url in recommendedUrls }
+            .filterNot { it.url in subscriptionUrls }
             .distinctBy { it.url }
     }
 
