@@ -257,8 +257,13 @@ fun PlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED && autoPlayEnabled) {
-                    if (queueIndex in 0 until queue.lastIndex) {
-                        onQueueJump(queueIndex + 1)
+                    if (queue.isNotEmpty()) {
+                        // Playlist-এর শেষ ভিডিও শেষ হলে আর related video auto-play হবে না।
+                        if (queueIndex in 0 until queue.lastIndex) {
+                            onQueueJump(queueIndex + 1)
+                        } else {
+                            controller?.stop()
+                        }
                     } else {
                         related.firstOrNull()?.let { onRelatedSelected(it) }
                     }
@@ -339,10 +344,21 @@ fun PlayerScreen(
         }
     }
 
-    val effectiveHasNext = (queueIndex in 0 until queue.lastIndex) || related.isNotEmpty()
+    val hasQueueNext = queueIndex in 0 until queue.lastIndex
+    val effectiveHasNext = if (queue.isNotEmpty()) {
+        hasQueueNext
+    } else {
+        related.isNotEmpty()
+    }
+
     val effectiveOnNext: () -> Unit = {
-        if (queueIndex in 0 until queue.lastIndex) onQueueJump(queueIndex + 1)
-        else related.firstOrNull()?.let { onRelatedSelected(it) }
+        if (queue.isNotEmpty()) {
+            if (hasQueueNext) {
+                onQueueJump(queueIndex + 1)
+            }
+        } else {
+            related.firstOrNull()?.let { onRelatedSelected(it) }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
