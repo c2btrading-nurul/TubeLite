@@ -93,6 +93,7 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var searchRequestToken by remember { mutableIntStateOf(0) }
     var isFullscreen by remember { mutableStateOf(false) }
+    var shortsFullscreen by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     var preparedUrl by remember { mutableStateOf<String?>(null) }
     var playHistory by remember { mutableStateOf<List<VideoResult>>(emptyList()) }
@@ -249,8 +250,8 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
             Modifier
                 .fillMaxSize()
                 .padding(
-                    top = if (isFullscreen) 0.dp else TOP_BAR_HEIGHT,
-                    bottom = if (isFullscreen) 0.dp else BOTTOM_BAR_HEIGHT
+                    top = if (isFullscreen || shortsFullscreen) 0.dp else TOP_BAR_HEIGHT,
+                    bottom = if (isFullscreen || shortsFullscreen) 0.dp else BOTTOM_BAR_HEIGHT
                 )
         ) {
             when {
@@ -315,7 +316,10 @@ private fun AppRoot(darkMode: Boolean, onDarkModeChange: (Boolean) -> Unit) {
                             onChannelSelected = { url -> channelUrl = url }
                         )
                         currentTab == BottomTab.SHORTS && shortsEnabled -> ShortsScreen(
-                            onVideoSelected = { playVideo(it) }
+                            controller = controller,
+                            onFullscreenChange = { fullscreen ->
+                                shortsFullscreen = fullscreen
+                            }
                         )
                         currentTab == BottomTab.SAVED -> SavedScreen(onPlayPlaylist = { list, idx -> playFromQueue(list, idx) })
                         currentTab == BottomTab.PROFILE -> ProfileScreen(
