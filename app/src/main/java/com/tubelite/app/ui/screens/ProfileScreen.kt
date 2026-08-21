@@ -3,10 +3,19 @@ package com.tubelite.app.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,8 +34,7 @@ import com.tubelite.app.data.CloudSync
 import com.tubelite.app.data.LocalBackupStore
 import com.tubelite.app.data.WatchHistoryStore
 
-private const val DRIVE_APPDATA_SCOPE =
-    "https://www.googleapis.com/auth/drive.appdata"
+private const val DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
 @Composable
 fun ProfileScreen(
@@ -67,11 +75,7 @@ fun ProfileScreen(
             Toast.makeText(
                 context,
                 if (success) {
-                    if (language == AppLanguageStore.ENGLISH) {
-                        "Restore completed. Please restart the app."
-                    } else {
-                        "রিস্টোর সম্পন্ন হয়েছে। অনুগ্রহ করে অ্যাপটি পুনরায় চালু করুন।"
-                    }
+                    if (language == AppLanguageStore.ENGLISH) "Restore completed. Please restart the app." else "রিস্টোর সম্পন্ন হয়েছে। অনুগ্রহ করে অ্যাপটি পুনরায় চালু করুন।"
                 } else {
                     if (language == AppLanguageStore.ENGLISH) "Restore failed" else "রিস্টোর ব্যর্থ হয়েছে"
                 },
@@ -86,7 +90,6 @@ fun ProfileScreen(
             .requestScopes(Scope(DRIVE_APPDATA_SCOPE))
             .build()
     }
-
     val client = remember { GoogleSignIn.getClient(context, gso) }
 
     fun syncAfterSignIn() {
@@ -97,11 +100,9 @@ fun ProfileScreen(
             Toast.makeText(
                 context,
                 if (language == AppLanguageStore.ENGLISH) {
-                    if (found) "Data restored from Google Drive"
-                    else "Signed in successfully. Data sync started."
+                    if (found) "Data restored from Google Drive" else "Signed in successfully. Data sync started."
                 } else {
-                    if (found) "Drive থেকে ডেটা রিস্টোর হয়েছে"
-                    else "সাইন-ইন সফল, ডেটা Drive-এ সেভ শুরু হলো"
+                    if (found) "Drive থেকে ডেটা রিস্টোর হয়েছে" else "সাইন-ইন সফল, ডেটা Drive-এ সেভ শুরু হলো"
                 },
                 Toast.LENGTH_LONG
             ).show()
@@ -118,11 +119,7 @@ fun ProfileScreen(
         } catch (e: ApiException) {
             Toast.makeText(
                 context,
-                if (language == AppLanguageStore.ENGLISH) {
-                    "Sign-in failed (${e.statusCode})"
-                } else {
-                    "সাইন-ইন ব্যর্থ (${e.statusCode})"
-                },
+                if (language == AppLanguageStore.ENGLISH) "Sign-in failed (${e.statusCode})" else "সাইন-ইন ব্যর্থ (${e.statusCode})",
                 Toast.LENGTH_SHORT
             ).show()
         }
@@ -131,217 +128,201 @@ fun ProfileScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Text(
             if (language == AppLanguageStore.ENGLISH) "Profile" else "প্রোফাইল",
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        val acc = account
-        if (acc != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (acc.photoUrl != null) {
-                    AsyncImage(
-                        model = acc.photoUrl,
-                        contentDescription = null,
-                        modifier = Modifier.size(56.dp).clip(CircleShape)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text(acc.displayName ?: "", fontWeight = FontWeight.Medium)
-                    Text(acc.email ?: "", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            if (syncing) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (language == AppLanguageStore.ENGLISH) "Syncing..." else "সিঙ্ক হচ্ছে...",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-
-            OutlinedButton(onClick = {
-                client.signOut()
-                account = null
-            }) {
-                Text(if (language == AppLanguageStore.ENGLISH) "Sign out" else "সাইন-আউট")
-            }
-        } else {
-            Button(onClick = { signInLauncher.launch(client.signInIntent) }) {
-                Text(if (language == AppLanguageStore.ENGLISH) "Sign in with Google" else "Google দিয়ে সাইন-ইন করুন")
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                if (language == AppLanguageStore.ENGLISH) {
-                    "When you sign in, your playlist, history and settings will be saved in the hidden TubeLite app folder in Google Drive."
-                } else {
-                    "সাইন-ইন করলে প্লে-লিস্ট/হিস্ট্রি/সেটিংস আপনার Google Drive-এর লুকানো অ্যাপ ফোল্ডারে সেভ থাকবে।"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-        }
-
-        Spacer(Modifier.height(20.dp))
-        HorizontalDivider()
-        Spacer(Modifier.height(16.dp))
-
-        Text(
-            if (language == AppLanguageStore.ENGLISH) "Settings" else "সেটিংস",
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
-        Spacer(Modifier.height(12.dp))
-
-        // 1. App language
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (language == AppLanguageStore.ENGLISH) "App language" else "এপের ভাষা",
-                fontWeight = FontWeight.Medium
-            )
-
-            Box {
-                OutlinedButton(onClick = { languageMenuExpanded = true }) {
-                    Text(if (language == AppLanguageStore.ENGLISH) "English" else "বাংলা")
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Default.ArrowDropDown,
-                        contentDescription = null
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = languageMenuExpanded,
-                    onDismissRequest = { languageMenuExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("বাংলা") },
-                        onClick = {
-                            languageMenuExpanded = false
-                            onLanguageChange(AppLanguageStore.BANGLA)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("English") },
-                        onClick = {
-                            languageMenuExpanded = false
-                            onLanguageChange(AppLanguageStore.ENGLISH)
-                        }
-                    )
-                }
-            }
-        }
-
         Spacer(Modifier.height(14.dp))
 
-        // 2. Dark mode
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
         ) {
-            Text(if (language == AppLanguageStore.ENGLISH) "Dark mode" else "ডার্ক মোড")
-            Switch(checked = darkMode, onCheckedChange = onDarkModeChange)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // 3. Auto-play
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (language == AppLanguageStore.ENGLISH) "Auto-play next" else "অটো-প্লে নেক্সট"
-            )
-            Switch(checked = autoplayNext, onCheckedChange = onAutoplayNextChange)
+            Column(Modifier.padding(16.dp)) {
+                val acc = account
+                if (acc != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (acc.photoUrl != null) {
+                            AsyncImage(
+                                model = acc.photoUrl,
+                                contentDescription = null,
+                                modifier = Modifier.size(54.dp).clip(CircleShape)
+                            )
+                        } else {
+                            Box(
+                                Modifier.size(54.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Cloud, contentDescription = null)
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(acc.displayName.orEmpty(), fontWeight = FontWeight.SemiBold)
+                            Text(acc.email.orEmpty(), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (syncing) {
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(6.dp))
+                        Text(if (language == AppLanguageStore.ENGLISH) "Syncing..." else "সিঙ্ক হচ্ছে...", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(onClick = {
+                        client.signOut()
+                        account = null
+                    }) {
+                        Text(if (language == AppLanguageStore.ENGLISH) "Sign out" else "সাইন-আউট")
+                    }
+                } else {
+                    Text(
+                        if (language == AppLanguageStore.ENGLISH) "Google Drive sync" else "Google Drive সিঙ্ক",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (language == AppLanguageStore.ENGLISH) "Optional: keep your app data synced across installs." else "ঐচ্ছিক: অ্যাপের ডেটা Google Drive-এ সিঙ্ক করে রাখতে পারবেন।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(onClick = { signInLauncher.launch(client.signInIntent) }) {
+                        Text(if (language == AppLanguageStore.ENGLISH) "Sign in with Google" else "Google দিয়ে সাইন-ইন করুন")
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(18.dp))
-
-        // 4. Local backup & restore
-        Text(
-            if (language == AppLanguageStore.ENGLISH) "Local Backup & Restore" else "লোকাল ব্যাকআপ ও রিস্টোর",
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(5.dp))
-        Text(
-            if (language == AppLanguageStore.ENGLISH) {
-                "Save your app data to a file and restore it later without signing in with Google."
-            } else {
-                "Google অ্যাকাউন্টে সাইন-ইন না করেও অ্যাপের ডেটা ফাইলে সংরক্ষণ করে পরে রিস্টোর করতে পারবেন।"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
-        )
+        Text(if (language == AppLanguageStore.ENGLISH) "Settings" else "সেটিংস", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
 
-        Row(
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            shape = RoundedCornerShape(18.dp)
         ) {
-            OutlinedButton(
-                onClick = {
-                    backupLauncher.launch("TubeLite-backup.json")
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    if (language == AppLanguageStore.ENGLISH)
-                        "Backup"
-                    else
-                        "ব্যাকআপ"
+            Column {
+                SettingsRow(
+                    icon = { Icon(Icons.Default.Language, contentDescription = null) },
+                    title = if (language == AppLanguageStore.ENGLISH) "App language" else "এপের ভাষা",
+                    subtitle = if (language == AppLanguageStore.ENGLISH) "Choose বাংলা or English" else "বাংলা অথবা English নির্বাচন করুন",
+                    trailing = {
+                        Box {
+                            OutlinedButton(onClick = { languageMenuExpanded = true }) {
+                                Text(if (language == AppLanguageStore.ENGLISH) "English" else "বাংলা")
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(
+                                expanded = languageMenuExpanded,
+                                onDismissRequest = { languageMenuExpanded = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("বাংলা") },
+                                    onClick = { languageMenuExpanded = false; onLanguageChange(AppLanguageStore.BANGLA) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("English") },
+                                    onClick = { languageMenuExpanded = false; onLanguageChange(AppLanguageStore.ENGLISH) }
+                                )
+                            }
+                        }
+                    }
+                )
+                HorizontalDivider()
+                SettingsRow(
+                    icon = { Icon(Icons.Default.DarkMode, contentDescription = null) },
+                    title = if (language == AppLanguageStore.ENGLISH) "Dark mode" else "ডার্ক মোড",
+                    trailing = { Switch(checked = darkMode, onCheckedChange = onDarkModeChange) }
+                )
+                HorizontalDivider()
+                SettingsRow(
+                    icon = { Icon(Icons.Default.Save, contentDescription = null) },
+                    title = if (language == AppLanguageStore.ENGLISH) "Auto-play next" else "অটো-প্লে নেক্সট",
+                    trailing = { Switch(checked = autoplayNext, onCheckedChange = onAutoplayNextChange) }
                 )
             }
-        
-            OutlinedButton(
-                onClick = {
-                    restoreLauncher.launch(
-                        arrayOf(
-                            "application/json",
-                            "text/json",
-                            "text/plain"
-                        )
-                    )
-                },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    if (language == AppLanguageStore.ENGLISH)
-                        "Restore"
-                    else
-                        "রিস্টোর"
+        }
+
+        Spacer(Modifier.height(18.dp))
+        Text(if (language == AppLanguageStore.ENGLISH) "Data & Backup" else "ডেটা ও ব্যাকআপ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                SettingsRow(
+                    icon = { Icon(Icons.Default.Save, contentDescription = null) },
+                    title = if (language == AppLanguageStore.ENGLISH) "Backup" else "ব্যাকআপ",
+                    subtitle = if (language == AppLanguageStore.ENGLISH) "Save playlist, history and settings to a file" else "প্লে-লিস্ট, হিস্ট্রি ও সেটিংস ফাইলে সংরক্ষণ করুন",
+                    trailing = {
+                        OutlinedButton(onClick = { backupLauncher.launch("TubeLite-backup.json") }) {
+                            Text(if (language == AppLanguageStore.ENGLISH) "Backup" else "ব্যাকআপ")
+                        }
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                SettingsRow(
+                    icon = { Icon(Icons.Default.Restore, contentDescription = null) },
+                    title = if (language == AppLanguageStore.ENGLISH) "Restore" else "রিস্টোর",
+                    subtitle = if (language == AppLanguageStore.ENGLISH) "Restore from a previous TubeLite backup" else "আগের TubeLite ব্যাকআপ থেকে ডেটা ফিরিয়ে নিন",
+                    trailing = {
+                        OutlinedButton(onClick = {
+                            restoreLauncher.launch(arrayOf("application/json", "text/json", "text/plain"))
+                        }) {
+                            Text(if (language == AppLanguageStore.ENGLISH) "Restore" else "রিস্টোর")
+                        }
+                    }
                 )
             }
         }
 
         Spacer(Modifier.height(16.dp))
-
-        OutlinedButton(onClick = {
-            WatchHistoryStore.clear(context)
-            Toast.makeText(
-                context,
-                if (language == AppLanguageStore.ENGLISH) "Watch history cleared" else "দেখার ইতিহাস মুছে ফেলা হয়েছে",
-                Toast.LENGTH_SHORT
-            ).show()
-        }) {
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                WatchHistoryStore.clear(context)
+                Toast.makeText(
+                    context,
+                    if (language == AppLanguageStore.ENGLISH) "Watch history cleared" else "দেখার ইতিহাস মুছে ফেলা হয়েছে",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        ) {
             Text(if (language == AppLanguageStore.ENGLISH) "Clear watch history" else "দেখার ইতিহাস মুছুন")
         }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String? = null,
+    trailing: @Composable () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { icon() }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        trailing()
     }
 }
