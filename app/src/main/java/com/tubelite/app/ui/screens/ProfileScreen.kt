@@ -293,24 +293,41 @@ fun ProfileScreen(
         Spacer(Modifier.height(8.dp))
 
         Row(
-            Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             OutlinedButton(
-                Modifier.weight(1f),
-                onClick = { backupLauncher.launch("TubeLite-backup.json") }
+                onClick = {
+                    backupLauncher.launch("TubeLite-backup.json")
+                },
+                modifier = Modifier.weight(1f)
             ) {
-                Text(if (language == AppLanguageStore.ENGLISH) "Backup" else "ব্যাকআপ")
+                Text(
+                    if (language == AppLanguageStore.ENGLISH)
+                        "Backup"
+                    else
+                        "ব্যাকআপ"
+                )
             }
+        
             OutlinedButton(
-                Modifier.weight(1f),
                 onClick = {
                     restoreLauncher.launch(
-                        arrayOf("application/json", "text/json", "text/plain")
+                        arrayOf(
+                            "application/json",
+                            "text/json",
+                            "text/plain"
+                        )
                     )
-                }
+                },
+                modifier = Modifier.weight(1f)
             ) {
-                Text(if (language == AppLanguageStore.ENGLISH) "Restore" else "রিস্টোর")
+                Text(
+                    if (language == AppLanguageStore.ENGLISH)
+                        "Restore"
+                    else
+                        "রিস্টোর"
+                )
             }
         }
 
