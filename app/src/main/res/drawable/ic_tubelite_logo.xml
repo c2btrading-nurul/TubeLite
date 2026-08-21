@@ -3,8 +3,28 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#101116" android:pathData="M54,4A50,50 0,1 0,54 104A50,50 0,1 0,54 4"/>
-    <path android:fillColor="#FF173B" android:pathData="M27,25L78,54L27,83Z"/>
-    <path android:fillColor="#FFFFFF" android:pathData="M39,38L66,54L39,70Z"/>
-    <path android:fillColor="#FFCC33" android:pathData="M24,23L79,54L24,85L20,80L68,54L20,28Z"/>
+
+    <!-- TubeLite header/app logo -->
+    <path
+        android:fillColor="#0B0D16"
+        android:pathData="M28,4L80,4A24,24 0,0 1,104 28L104,80A24,24 0,0 1,80 104L28,104A24,24 0,0 1,4 80L4,28A24,24 0,0 1,28 4Z" />
+
+    <!-- colorful play-ring -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M24,28L72,18L92,38L92,70L72,90L35,88L17,69L16,43Z" />
+    <path
+        android:fillColor="#FF1744"
+        android:pathData="M28,31L70,22L87,40L87,68L69,84L38,82L22,65L21,45Z" />
+    <path
+        android:fillColor="#FFCC33"
+        android:pathData="M31,34L68,27L82,42L82,65L67,78L41,76L28,62L27,47Z" />
+
+    <!-- play button -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,37L42,71L72,54Z" />
+    <path
+        android:fillColor="#FF1744"
+        android:pathData="M47,44L47,64L65,54Z" />
 </vector>
