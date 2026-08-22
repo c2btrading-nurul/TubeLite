@@ -4,13 +4,10 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -21,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -40,8 +38,8 @@ import com.tubelite.app.data.NowPlayingStore
 import com.tubelite.app.data.VideoResult
 import com.tubelite.app.data.YoutubeRepository
 import com.tubelite.app.playback.TubeMediaSourceFactory
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 @Composable
 fun ShortsScreen(
@@ -50,70 +48,131 @@ fun ShortsScreen(
 ) {
     val context = LocalContext.current
     val language = LocalAppLanguage.current
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    val english = language == AppLanguageStore.ENGLISH
 
     var shorts by remember {
         mutableStateOf<List<VideoResult>>(emptyList())
     }
 
-    var loading by remember { mutableStateOf(true) }
-    var loadingMore by remember { mutableStateOf(false) }
-    var refreshing by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var loadRound by remember { mutableIntStateOf(1) }
+    var loading by remember {
+        mutableStateOf(true)
+    }
 
-    var selectedIndex by remember { mutableIntStateOf(-1) }
-    var selectedVideo by remember { mutableStateOf<VideoResult?>(null) }
+    var loadingMore by remember {
+        mutableStateOf(false)
+    }
 
-    var channelAvatarUrl by remember { mutableStateOf<String?>(null) }
-    var streamTitle by remember { mutableStateOf("") }
+    var refreshing by remember {
+        mutableStateOf(false)
+    }
 
-    var playerLoading by remember { mutableStateOf(false) }
-    var isPlaying by remember { mutableStateOf(false) }
+    var error by remember {
+        mutableStateOf<String?>(null)
+    }
 
-    val english = language == AppLanguageStore.ENGLISH
+    var loadRound by remember {
+        mutableIntStateOf(1)
+    }
+
+    var selectedIndex by remember {
+        mutableIntStateOf(-1)
+    }
+
+    var selectedVideo by remember {
+        mutableStateOf<VideoResult?>(null)
+    }
+
+    var channelAvatarUrl by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var streamTitle by remember {
+        mutableStateOf("")
+    }
+
+    var playerLoading by remember {
+        mutableStateOf(false)
+    }
+
+    var isPlaying by remember {
+        mutableStateOf(false)
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * LOAD SHORTS
+     * ------------------------------------------------------------
+     */
 
     suspend fun loadShorts(
         round: Int,
         replace: Boolean = false
     ) {
-        val requested = if (round == 1) 24 else 18
+        val requested =
+            if (round == 1) {
+                24
+            } else {
+                18
+            }
 
-        val newItems = YoutubeRepository.getPersonalizedShorts(
-            context = context,
-            maxItems = requested * round
-        )
+        val newItems =
+            YoutubeRepository.getPersonalizedShorts(
+                context = context,
+                maxItems = requested * round
+            )
 
         if (replace) {
-            shorts = newItems.distinctBy { it.url }
+            shorts =
+                newItems
+                    .distinctBy { it.url }
         } else {
-            val existing = shorts.map { it.url }.toSet()
+            val existing =
+                shorts
+                    .map { it.url }
+                    .toSet()
 
-            shorts = (
-                shorts +
-                    newItems.filterNot { it.url in existing }
-                ).distinctBy { it.url }
+            shorts =
+                (
+                    shorts +
+                        newItems.filterNot {
+                            it.url in existing
+                        }
+                    )
+                    .distinctBy { it.url }
         }
     }
+
+    /*
+     * ------------------------------------------------------------
+     * PREPARE VIDEO
+     * ------------------------------------------------------------
+     */
 
     suspend fun prepareShort(
         video: VideoResult,
         autoPlay: Boolean = true
     ) {
-        val c = controller ?: throw IllegalStateException(
-            if (english) {
-                "Player is not ready yet."
-            } else {
-                "প্লেয়ার এখনো প্রস্তুত নয়।"
-            }
-        )
+        val c =
+            controller
+                ?: throw IllegalStateException(
+                    if (english) {
+                        "Player is not ready yet."
+                    } else {
+                        "প্লেয়ার এখনো প্রস্তুত নয়।"
+                    }
+                )
 
         playerLoading = true
         error = null
 
         try {
-            val playable = YoutubeRepository.getPlayableStream(video.url)
+            val playable =
+                YoutubeRepository.getPlayableStream(
+                    video.url
+                )
+
             val q = playable.default
 
             val streamUrl =
@@ -131,49 +190,56 @@ fun ShortsScreen(
                 )
             }
 
-            val extras = Bundle().apply {
-                q.progressiveUrl?.let {
-                    putString(
-                        TubeMediaSourceFactory.KEY_PROGRESSIVE,
-                        it
-                    )
-                }
+            val extras =
+                Bundle().apply {
 
-                q.videoOnlyUrl?.let {
-                    putString(
-                        TubeMediaSourceFactory.KEY_VIDEO_ONLY,
-                        it
-                    )
-                }
-
-                q.audioOnlyUrl?.let {
-                    putString(
-                        TubeMediaSourceFactory.KEY_AUDIO_ONLY,
-                        it
-                    )
-                }
-
-                q.hlsUrl?.let {
-                    putString(
-                        TubeMediaSourceFactory.KEY_HLS,
-                        it
-                    )
-                }
-            }
-
-            val metadata = MediaMetadata.Builder()
-                .setTitle(
-                    playable.title.ifBlank {
-                        video.title
+                    q.progressiveUrl?.let {
+                        putString(
+                            TubeMediaSourceFactory.KEY_PROGRESSIVE,
+                            it
+                        )
                     }
-                )
-                .setArtist(video.uploaderName)
-                .apply {
-                    playable.thumbnailUrl?.let {
-                        setArtworkUri(Uri.parse(it))
+
+                    q.videoOnlyUrl?.let {
+                        putString(
+                            TubeMediaSourceFactory.KEY_VIDEO_ONLY,
+                            it
+                        )
+                    }
+
+                    q.audioOnlyUrl?.let {
+                        putString(
+                            TubeMediaSourceFactory.KEY_AUDIO_ONLY,
+                            it
+                        )
+                    }
+
+                    q.hlsUrl?.let {
+                        putString(
+                            TubeMediaSourceFactory.KEY_HLS,
+                            it
+                        )
                     }
                 }
-                .build()
+
+            val metadata =
+                MediaMetadata.Builder()
+                    .setTitle(
+                        playable.title.ifBlank {
+                            video.title
+                        }
+                    )
+                    .setArtist(
+                        video.uploaderName
+                    )
+                    .apply {
+                        playable.thumbnailUrl?.let {
+                            setArtworkUri(
+                                Uri.parse(it)
+                            )
+                        }
+                    }
+                    .build()
 
             val mediaItemBuilder =
                 MediaItem.Builder()
@@ -190,19 +256,28 @@ fun ShortsScreen(
                 .firstOrNull()
                 ?.let { subtitle ->
 
-                    mediaItemBuilder.setSubtitleConfigurations(
-                        listOf(
-                            MediaItem.SubtitleConfiguration.Builder(
-                                Uri.parse(subtitle.url)
+                    mediaItemBuilder
+                        .setSubtitleConfigurations(
+                            listOf(
+                                MediaItem.SubtitleConfiguration
+                                    .Builder(
+                                        Uri.parse(
+                                            subtitle.url
+                                        )
+                                    )
+                                    .setMimeType(
+                                        subtitle.mimeType
+                                    )
+                                    .setLanguage(
+                                        subtitle.label
+                                    )
+                                    .build()
                             )
-                                .setMimeType(subtitle.mimeType)
-                                .setLanguage(subtitle.label)
-                                .build()
                         )
-                    )
                 }
 
-            val mediaItem = mediaItemBuilder.build()
+            val mediaItem =
+                mediaItemBuilder.build()
 
             streamTitle =
                 playable.title.ifBlank {
@@ -243,6 +318,12 @@ fun ShortsScreen(
         }
     }
 
+    /*
+     * ------------------------------------------------------------
+     * OPEN FIRST / SELECTED SHORT
+     * ------------------------------------------------------------
+     */
+
     fun openShort(index: Int) {
 
         if (index !in shorts.indices) {
@@ -262,6 +343,140 @@ fun ShortsScreen(
         }
     }
 
+    /*
+     * ------------------------------------------------------------
+     * NEXT SHORT
+     * ------------------------------------------------------------
+     */
+
+    fun goToNextShort() {
+
+        if (playerLoading) {
+            return
+        }
+
+        val nextIndex =
+            selectedIndex + 1
+
+        if (nextIndex < shorts.size) {
+
+            selectedIndex = nextIndex
+
+            scope.launch {
+                prepareShort(
+                    shorts[nextIndex],
+                    true
+                )
+            }
+
+            return
+        }
+
+        /*
+         * Current list শেষ।
+         * নতুন personalized Shorts এনে
+         * তারপর next video play করবে।
+         */
+
+        scope.launch {
+
+            if (loadingMore) {
+                return@launch
+            }
+
+            loadingMore = true
+
+            try {
+
+                loadRound += 1
+
+                val oldSize =
+                    shorts.size
+
+                loadShorts(
+                    round = loadRound
+                )
+
+                val newIndex =
+                    selectedIndex + 1
+
+                if (newIndex < shorts.size) {
+
+                    selectedIndex =
+                        newIndex
+
+                    prepareShort(
+                        shorts[newIndex],
+                        true
+                    )
+
+                } else if (shorts.size > oldSize) {
+
+                    val fallbackIndex =
+                        oldSize
+
+                    selectedIndex =
+                        fallbackIndex
+
+                    prepareShort(
+                        shorts[fallbackIndex],
+                        true
+                    )
+                }
+
+            } catch (e: Exception) {
+
+                error =
+                    e.message
+                        ?: if (english) {
+                            "Could not load the next Short."
+                        } else {
+                            "পরের Shorts লোড করা যায়নি।"
+                        }
+
+            } finally {
+
+                loadingMore = false
+            }
+        }
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * PREVIOUS SHORT
+     * ------------------------------------------------------------
+     */
+
+    fun goToPreviousShort() {
+
+        if (playerLoading) {
+            return
+        }
+
+        val previousIndex =
+            selectedIndex - 1
+
+        if (previousIndex < 0) {
+            return
+        }
+
+        selectedIndex =
+            previousIndex
+
+        scope.launch {
+            prepareShort(
+                shorts[previousIndex],
+                true
+            )
+        }
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * CLOSE PLAYER
+     * ------------------------------------------------------------
+     */
+
     fun closeShortsPlayer() {
 
         controller?.pause()
@@ -275,6 +490,12 @@ fun ShortsScreen(
         onFullscreenChange(false)
     }
 
+    /*
+     * ------------------------------------------------------------
+     * REFRESH
+     * ------------------------------------------------------------
+     */
+
     fun refreshShorts() {
 
         if (refreshing) {
@@ -284,6 +505,7 @@ fun ShortsScreen(
         scope.launch {
 
             refreshing = true
+            error = null
 
             try {
 
@@ -297,22 +519,37 @@ fun ShortsScreen(
                     replace = true
                 )
 
-                if (currentUrl != null) {
+                if (selectedIndex >= 0) {
 
                     val newIndex =
-                        shorts.indexOfFirst {
-                            it.url == currentUrl
+                        if (currentUrl != null) {
+                            shorts.indexOfFirst {
+                                it.url == currentUrl
+                            }
+                        } else {
+                            0
                         }
 
                     if (newIndex >= 0) {
 
-                        selectedIndex = newIndex
+                        selectedIndex =
+                            newIndex
 
                         prepareShort(
                             shorts[newIndex],
                             true
                         )
+
+                    } else if (shorts.isNotEmpty()) {
+
+                        selectedIndex = 0
+
+                        prepareShort(
+                            shorts[0],
+                            true
+                        )
                     }
+
                 }
 
             } catch (e: Exception) {
@@ -332,6 +569,16 @@ fun ShortsScreen(
             }
         }
     }
+
+    /*
+     * ------------------------------------------------------------
+     * INITIAL LOAD
+     *
+     * গুরুত্বপূর্ণ:
+     * Shorts menu চাপলে আর list screen দেখাবে না।
+     * প্রথম Shorts পাওয়া মাত্র সরাসরি fullscreen player।
+     * ------------------------------------------------------------
+     */
 
     LaunchedEffect(Unit) {
 
@@ -358,53 +605,32 @@ fun ShortsScreen(
         }
     }
 
-    LaunchedEffect(listState) {
+    /*
+     * প্রথমবার Shorts data এবং MediaController
+     * দুটোই ready হলে সরাসরি প্রথম Shorts play।
+     */
 
-        snapshotFlow {
+    LaunchedEffect(
+        controller,
+        shorts
+    ) {
 
-            val last =
-                listState.layoutInfo
-                    .visibleItemsInfo
-                    .lastOrNull()
-                    ?.index
-                    ?: 0
-
-            val total =
-                listState.layoutInfo
-                    .totalItemsCount
-
-            total > 0 &&
-                last >= total - 4
-
-        }.collect { nearEnd ->
-
-            if (
-                nearEnd &&
-                !loading &&
-                !loadingMore &&
-                shorts.isNotEmpty() &&
-                selectedIndex < 0
-            ) {
-
-                loadingMore = true
-
-                try {
-
-                    loadRound += 1
-
-                    loadShorts(
-                        loadRound
-                    )
-
-                } catch (_: Exception) {
-
-                } finally {
-
-                    loadingMore = false
-                }
-            }
+        if (
+            controller != null &&
+            shorts.isNotEmpty() &&
+            selectedIndex < 0
+        ) {
+            openShort(0)
         }
     }
+
+    /*
+     * ------------------------------------------------------------
+     * MEDIA PLAYER LISTENER
+     *
+     * ভিডিও শেষ হলে automatically next Short।
+     * ------------------------------------------------------------
+     */
 
     DisposableEffect(controller) {
 
@@ -427,62 +653,7 @@ fun ShortsScreen(
                         selectedIndex >= 0
                     ) {
 
-                        val nextIndex =
-                            selectedIndex + 1
-
-                        if (
-                            nextIndex < shorts.size
-                        ) {
-
-                            selectedIndex =
-                                nextIndex
-
-                            scope.launch {
-                                prepareShort(
-                                    shorts[nextIndex],
-                                    true
-                                )
-                            }
-
-                        } else {
-
-                            scope.launch {
-
-                                try {
-
-                                    loadingMore = true
-
-                                    loadRound += 1
-
-                                    loadShorts(
-                                        loadRound
-                                    )
-
-                                    val newIndex =
-                                        selectedIndex + 1
-
-                                    if (
-                                        newIndex < shorts.size
-                                    ) {
-
-                                        selectedIndex =
-                                            newIndex
-
-                                        prepareShort(
-                                            shorts[newIndex],
-                                            true
-                                        )
-
-                                    }
-
-                                } catch (_: Exception) {
-
-                                } finally {
-
-                                    loadingMore = false
-                                }
-                            }
-                        }
+                        goToNextShort()
                     }
                 }
             }
@@ -494,12 +665,20 @@ fun ShortsScreen(
         }
     }
 
+    /*
+     * ------------------------------------------------------------
+     * FULLSCREEN SYSTEM BARS
+     * ------------------------------------------------------------
+     */
+
     DisposableEffect(selectedIndex) {
+
+        val activity =
+            context as? android.app.Activity
 
         if (selectedIndex >= 0) {
 
-            context
-                .let { it as? android.app.Activity }
+            activity
                 ?.window
                 ?.let { window ->
 
@@ -521,31 +700,40 @@ fun ShortsScreen(
 
         onDispose {
 
-            if (selectedIndex >= 0) {
+            activity
+                ?.window
+                ?.let { window ->
 
-                context
-                    .let { it as? android.app.Activity }
-                    ?.window
-                    ?.let { window ->
-
-                        WindowCompat
-                            .getInsetsController(
-                                window,
-                                window.decorView
-                            )
-                            .show(
-                                WindowInsetsCompat.Type.systemBars()
-                            )
-                    }
-            }
+                    WindowCompat
+                        .getInsetsController(
+                            window,
+                            window.decorView
+                        )
+                        .show(
+                            WindowInsetsCompat.Type.systemBars()
+                        )
+                }
         }
     }
+
+    /*
+     * Android back button
+     */
 
     BackHandler(
         enabled = selectedIndex >= 0
     ) {
         closeShortsPlayer()
     }
+
+    /*
+     * ------------------------------------------------------------
+     * FULLSCREEN PLAYER
+     * ------------------------------------------------------------
+     *
+     * এখানে selectedIndex >= 0 হলেই player।
+     * কোনো Shorts list UI আর দেখানো হবে না।
+     */
 
     if (
         selectedIndex >= 0 &&
@@ -558,8 +746,10 @@ fun ShortsScreen(
             title = streamTitle,
             channelAvatarUrl = channelAvatarUrl,
             isPlaying = isPlaying,
-            loading = playerLoading,
+            loading = playerLoading || loadingMore,
+            refreshing = refreshing,
             language = language,
+
             onTogglePlay = {
 
                 if (controller?.isPlaying == true) {
@@ -568,9 +758,19 @@ fun ShortsScreen(
                     controller?.play()
                 }
             },
+
+            onPrevious = {
+                goToPreviousShort()
+            },
+
+            onNext = {
+                goToNextShort()
+            },
+
             onClose = {
                 closeShortsPlayer()
             },
+
             onRefresh = {
                 refreshShorts()
             }
@@ -579,174 +779,49 @@ fun ShortsScreen(
         return
     }
 
-    Column(
-        Modifier.fillMaxSize()
+    /*
+     * ------------------------------------------------------------
+     * EMPTY / INITIAL LOADING STATE
+     *
+     * সাধারণত খুব অল্প সময়ের জন্য দেখা যাবে।
+     * ------------------------------------------------------------
+     */
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            tonalElevation = 2.dp
-        ) {
-
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        horizontal = 14.dp,
-                        vertical = 10.dp
-                    ),
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                Column(
-                    Modifier.weight(1f)
-                ) {
-
-                    Text(
-                        if (english) {
-                            "Shorts"
-                        } else {
-                            "শর্টস"
-                        },
-                        style =
-                            MaterialTheme.typography.titleLarge
-                    )
-
-                    Text(
-                        "YouTube Shorts",
-                        style =
-                            MaterialTheme.typography.bodySmall,
-                        color =
-                            MaterialTheme.colorScheme
-                                .onSurface
-                                .copy(alpha = 0.65f)
-                    )
-                }
-
-                IconButton(
-                    onClick = {
-                        refreshShorts()
-                    },
-                    enabled = !refreshing
-                ) {
-
-                    if (refreshing) {
-
-                        CircularProgressIndicator(
-                            modifier =
-                                Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-
-                    } else {
-
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription =
-                                if (english) {
-                                    "Refresh"
-                                } else {
-                                    "রিফ্রেশ"
-                                }
-                        )
-                    }
-                }
-            }
-        }
 
         if (loading) {
 
-            Box(
-                Modifier.fillMaxSize(),
-                contentAlignment =
-                    Alignment.Center
-            ) {
+            CircularProgressIndicator()
 
-                CircularProgressIndicator()
-            }
+        } else {
 
-            return@Column
-        }
-
-        if (shorts.isEmpty()) {
-
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment =
-                    Alignment.Center
-            ) {
-
-                Text(
-                    error
-                        ?: if (english) {
-                            "No Shorts found right now."
-                        } else {
-                            "এই মুহূর্তে কোনো Shorts পাওয়া যায়নি।"
-                        },
-                    color =
-                        if (error != null) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        }
-                )
-            }
-
-            return@Column
-        }
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding =
-                PaddingValues(12.dp),
-            verticalArrangement =
-                Arrangement.spacedBy(12.dp)
-        ) {
-
-            items(
-                shorts,
-                key = { it.url }
-            ) { video ->
-
-                ShortsCard(
-                    video = video,
-                    onClick = {
-
-                        val index =
-                            shorts.indexOfFirst {
-                                it.url == video.url
-                            }
-
-                        openShort(index)
+            Text(
+                error
+                    ?: if (english) {
+                        "No Shorts found right now."
+                    } else {
+                        "এই মুহূর্তে কোনো Shorts পাওয়া যায়নি।"
+                    },
+                color =
+                    if (error != null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
                     }
-                )
-            }
-
-            if (loadingMore) {
-
-                item {
-
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        contentAlignment =
-                            Alignment.Center
-                    ) {
-
-                        CircularProgressIndicator(
-                            Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
+            )
         }
     }
 }
+
+
+/*
+ * ================================================================
+ * FULLSCREEN SHORTS PLAYER
+ * ================================================================
+ */
 
 @Composable
 private fun ShortsFullscreenPlayer(
@@ -756,8 +831,11 @@ private fun ShortsFullscreenPlayer(
     channelAvatarUrl: String?,
     isPlaying: Boolean,
     loading: Boolean,
+    refreshing: Boolean,
     language: String,
     onTogglePlay: () -> Unit,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onClose: () -> Unit,
     onRefresh: () -> Unit
 ) {
@@ -765,14 +843,27 @@ private fun ShortsFullscreenPlayer(
     val english =
         language == AppLanguageStore.ENGLISH
 
+    /*
+     * Gesture layer-এর জন্য minimum swipe distance।
+     */
+
+    val swipeThreshold =
+        120f
+
     Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
     ) {
 
-        AndroidView(
+        /*
+         * --------------------------------------------------------
+         * VIDEO
+         * --------------------------------------------------------
+         */
 
+        AndroidView(
             modifier =
                 Modifier.fillMaxSize(),
 
@@ -782,6 +873,9 @@ private fun ShortsFullscreenPlayer(
 
                     player = controller
 
+                    /*
+                     * YouTube Shorts-এর মতো custom UI।
+                     */
                     useController = false
 
                     keepScreenOn = true
@@ -793,11 +887,6 @@ private fun ShortsFullscreenPlayer(
                     setShutterBackgroundColor(
                         android.graphics.Color.BLACK
                     )
-
-                    setOnClickListener {
-
-                        onTogglePlay()
-                    }
                 }
             },
 
@@ -812,22 +901,162 @@ private fun ShortsFullscreenPlayer(
             }
         )
 
+
+        /*
+         * --------------------------------------------------------
+         * GESTURE + TAP LAYER
+         *
+         * Tap:
+         *      Play / Pause
+         *
+         * Swipe UP:
+         *      Next
+         *
+         * Swipe DOWN:
+         *      Previous
+         * --------------------------------------------------------
+         */
+
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(
+                        video.url,
+                        selectedKey = Unit
+                    ) {
+
+                        awaitEachGesture {
+
+                            val down =
+                                awaitFirstDown(
+                                    requireUnconsumed = false
+                                )
+
+                            val startY =
+                                down.position.y
+
+                            var endY =
+                                startY
+
+                            var moved = false
+
+                            while (true) {
+
+                                val event =
+                                    awaitPointerEvent()
+
+                                val change =
+                                    event.changes
+                                        .firstOrNull()
+                                        ?: break
+
+                                endY =
+                                    change.position.y
+
+                                if (
+                                    abs(
+                                        endY - startY
+                                    ) > 20f
+                                ) {
+                                    moved = true
+                                }
+
+                                if (
+                                    change.changedToUp()
+                                ) {
+                                    break
+                                }
+
+                                if (
+                                    change.changedToCanceled()
+                                ) {
+                                    return@awaitEachGesture
+                                }
+                            }
+
+                            val delta =
+                                endY - startY
+
+                            /*
+                             * Swipe down
+                             * = previous
+                             */
+
+                            if (
+                                moved &&
+                                delta >
+                                    swipeThreshold
+                            ) {
+
+                                onPrevious()
+
+                            }
+
+                            /*
+                             * Swipe up
+                             * = next
+                             */
+
+                            else if (
+                                moved &&
+                                delta <
+                                    -swipeThreshold
+                            ) {
+
+                                onNext()
+
+                            }
+
+                            /*
+                             * Small/no movement
+                             * = tap
+                             */
+
+                            else if (!moved) {
+
+                                onTogglePlay()
+                            }
+                        }
+                    }
+        )
+
+
+        /*
+         * --------------------------------------------------------
+         * LOADING INDICATOR
+         * --------------------------------------------------------
+         */
+
         if (loading) {
 
             CircularProgressIndicator(
                 modifier =
-                    Modifier.align(
-                        Alignment.Center
-                    ),
-                color = Color.White
+                    Modifier
+                        .align(
+                            Alignment.Center
+                        )
+                        .size(48.dp),
+                color = Color.White,
+                strokeWidth = 3.dp
             )
         }
 
+
+        /*
+         * --------------------------------------------------------
+         * BACK BUTTON
+         * --------------------------------------------------------
+         */
+
         IconButton(
             onClick = onClose,
+
             modifier =
                 Modifier
-                    .align(Alignment.TopStart)
+                    .align(
+                        Alignment.TopStart
+                    )
                     .padding(
                         top = 18.dp,
                         start = 8.dp
@@ -837,22 +1066,36 @@ private fun ShortsFullscreenPlayer(
 
             Icon(
                 Icons.Default.ArrowBack,
+
                 contentDescription =
                     if (english) {
                         "Back"
                     } else {
                         "পেছনে"
                     },
+
                 tint = Color.White
             )
         }
 
+
+        /*
+         * --------------------------------------------------------
+         * FLOATING REFRESH BUTTON
+         *
+         * আগের নির্ধারিত position-এই থাকবে।
+         * --------------------------------------------------------
+         */
+
         IconButton(
             onClick = onRefresh,
-            enabled = !loading,
+            enabled = !refreshing,
+
             modifier =
                 Modifier
-                    .align(Alignment.TopEnd)
+                    .align(
+                        Alignment.TopEnd
+                    )
                     .padding(
                         top = 18.dp,
                         end = 10.dp
@@ -860,45 +1103,75 @@ private fun ShortsFullscreenPlayer(
                     .size(48.dp)
                     .background(
                         Color.Black.copy(
-                            alpha = 0.30f
+                            alpha = 0.35f
                         ),
                         CircleShape
                     )
         ) {
 
-            Icon(
-                Icons.Default.Refresh,
-                contentDescription =
-                    if (english) {
-                        "Refresh Shorts"
-                    } else {
-                        "Shorts রিফ্রেশ"
-                    },
-                tint = Color.White
-            )
+            if (refreshing) {
+
+                CircularProgressIndicator(
+                    modifier =
+                        Modifier.size(22.dp),
+                    color = Color.White,
+                    strokeWidth = 2.dp
+                )
+
+            } else {
+
+                Icon(
+                    Icons.Default.Refresh,
+
+                    contentDescription =
+                        if (english) {
+                            "Refresh Shorts"
+                        } else {
+                            "Shorts রিফ্রেশ"
+                        },
+
+                    tint = Color.White
+                )
+            }
         }
+
+
+        /*
+         * --------------------------------------------------------
+         * CENTER PLAY ICON
+         * --------------------------------------------------------
+         *
+         * Video paused থাকলে শুধু indication।
+         * Tap করলে আবার play হবে।
+         */
 
         if (
             !isPlaying &&
-            !loading
+            !loading &&
+            !refreshing
         ) {
 
             Icon(
                 Icons.Default.PlayArrow,
+
                 contentDescription =
                     if (english) {
                         "Play"
                     } else {
                         "প্লে"
                     },
+
                 tint = Color.White,
+
                 modifier =
                     Modifier
-                        .align(Alignment.Center)
+                        .align(
+                            Alignment.Center
+                        )
                         .size(76.dp)
                         .background(
                             Color.Black.copy(
-                                alpha = 0.28f
+                                alpha = 0.30f
                             ),
                             CircleShape
                         )
@@ -906,10 +1179,21 @@ private fun ShortsFullscreenPlayer(
             )
         }
 
+
+        /*
+         * --------------------------------------------------------
+         * CHANNEL + TITLE
+         *
+         * নিচে YouTube Shorts-এর মতো।
+         * --------------------------------------------------------
+         */
+
         Column(
             modifier =
                 Modifier
-                    .align(Alignment.BottomStart)
+                    .align(
+                        Alignment.BottomStart
+                    )
                     .fillMaxWidth()
                     .padding(
                         start = 16.dp,
@@ -918,25 +1202,38 @@ private fun ShortsFullscreenPlayer(
                     )
         ) {
 
+            /*
+             * Channel row
+             */
+
             Row(
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
 
-                if (channelAvatarUrl != null) {
+                if (
+                    !channelAvatarUrl
+                        .isNullOrBlank()
+                ) {
 
                     AsyncImage(
-                        model = channelAvatarUrl,
+                        model =
+                            channelAvatarUrl,
+
                         contentDescription =
                             if (english) {
                                 "Channel"
                             } else {
                                 "চ্যানেল"
                             },
+
                         modifier =
                             Modifier
-                                .size(44.dp)
-                                .clip(CircleShape),
+                                .size(46.dp)
+                                .clip(
+                                    CircleShape
+                                ),
+
                         contentScale =
                             ContentScale.Crop
                     )
@@ -944,14 +1241,18 @@ private fun ShortsFullscreenPlayer(
                 } else {
 
                     Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(
-                                Color.White.copy(
-                                    alpha = 0.20f
+                        modifier =
+                            Modifier
+                                .size(46.dp)
+                                .clip(
+                                    CircleShape
                                 )
-                            ),
+                                .background(
+                                    Color.White.copy(
+                                        alpha = 0.20f
+                                    )
+                                ),
+
                         contentAlignment =
                             Alignment.Center
                     ) {
@@ -960,6 +1261,7 @@ private fun ShortsFullscreenPlayer(
                             video.uploaderName
                                 .take(1)
                                 .uppercase(),
+
                             color = Color.White
                         )
                     }
@@ -970,106 +1272,47 @@ private fun ShortsFullscreenPlayer(
                 )
 
                 Text(
-                    video.uploaderName.ifBlank {
-                        if (english) {
-                            "Unknown channel"
-                        } else {
-                            "অজানা চ্যানেল"
-                        }
-                    },
+                    video.uploaderName
+                        .ifBlank {
+
+                            if (english) {
+                                "Unknown channel"
+                            } else {
+                                "অজানা চ্যানেল"
+                            }
+                        },
+
                     color = Color.White,
+
                     style =
                         MaterialTheme.typography
                             .titleMedium
                 )
             }
 
+
             Spacer(
                 Modifier.height(8.dp)
             )
+
+
+            /*
+             * Video title
+             */
 
             Text(
                 title.ifBlank {
                     video.title
                 },
+
                 color = Color.White,
-                maxLines = 3,
+
+                maxLines = 4,
+
                 style =
-                    MaterialTheme.typography.bodyLarge
+                    MaterialTheme.typography
+                        .bodyLarge
             )
-        }
-    }
-}
-
-@Composable
-private fun ShortsCard(
-    video: VideoResult,
-    onClick: () -> Unit
-) {
-
-    Card(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick),
-        shape =
-            RoundedCornerShape(18.dp)
-    ) {
-
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        ) {
-
-            AsyncImage(
-                model = video.thumbnailUrl,
-                contentDescription =
-                    video.title,
-                modifier =
-                    Modifier
-                        .width(126.dp)
-                        .aspectRatio(9f / 16f)
-                        .clip(
-                            RoundedCornerShape(14.dp)
-                        ),
-                contentScale =
-                    ContentScale.Crop
-            )
-
-            Spacer(
-                Modifier.width(12.dp)
-            )
-
-            Column(
-                Modifier
-                    .weight(1f)
-                    .padding(vertical = 8.dp)
-            ) {
-
-                Text(
-                    video.title,
-                    maxLines = 4,
-                    style =
-                        MaterialTheme.typography
-                            .bodyLarge
-                )
-
-                Spacer(
-                    Modifier.height(8.dp)
-                )
-
-                Text(
-                    video.uploaderName,
-                    style =
-                        MaterialTheme.typography
-                            .bodySmall,
-                    color =
-                        MaterialTheme.colorScheme
-                            .onSurface
-                            .copy(alpha = 0.68f)
-                )
-            }
         }
     }
 }
