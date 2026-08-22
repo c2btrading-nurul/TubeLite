@@ -922,73 +922,66 @@ private fun ShortsFullscreenPlayer(
             Modifier
                 .fillMaxSize()
                 .pointerInput(video.url) {
-    
-                    awaitEachGesture {
-    
-                        val down =
-                            awaitFirstDown(
-                                requireUnconsumed = false
-                            )
-    
-                        val startY =
-                            down.position.y
-    
-                        var endY =
-                            startY
-    
-                        var moved = false
-    
-                        while (true) {
-    
-                            val event =
-                                awaitPointerEvent()
-    
-                            val change =
-                                event.changes
-                                    .firstOrNull()
-                                    ?: break
-    
-                            endY =
-                                change.position.y
-    
-                            if (
-                                abs(endY - startY) > 20f
-                            ) {
-                                moved = true
-                            }
-    
-                            if (
-                                change.changedToUp()
-                            ) {
-                                break
-                            }
-    
-                            if (
-                                change.changedToCanceled()
-                            ) {
-                                return@awaitEachGesture
-                            }
-                        }
-    
-                        val delta =
-                            endY - startY
-    
+
+                awaitEachGesture {
+            
+                    val down =
+                        awaitFirstDown(
+                            requireUnconsumed = false
+                        )
+            
+                    val startY =
+                        down.position.y
+            
+                    var endY =
+                        startY
+            
+                    var moved = false
+            
+                    while (true) {
+            
+                        val event =
+                            awaitPointerEvent()
+            
+                        val change =
+                            event.changes
+                                .firstOrNull()
+                                ?: break
+            
+                        endY =
+                            change.position.y
+            
                         if (
-                            moved &&
-                            delta > swipeThreshold
+                            abs(endY - startY) > 20f
                         ) {
-                            onPrevious()
-                        } else if (
-                            moved &&
-                            delta < -swipeThreshold
-                        ) {
-                            onNext()
-                        } else if (!moved) {
-                            onTogglePlay()
+                            moved = true
+                        }
+            
+                        if (!change.pressed) {
+                            break
                         }
                     }
+            
+                    val delta =
+                        endY - startY
+            
+                    if (
+                        moved &&
+                        delta > swipeThreshold
+                    ) {
+                        onPrevious()
+            
+                    } else if (
+                        moved &&
+                        delta < -swipeThreshold
+                    ) {
+                        onNext()
+            
+                    } else if (!moved) {
+                        onTogglePlay()
+                    }
                 }
-            )
+            }
 
 
         /*
