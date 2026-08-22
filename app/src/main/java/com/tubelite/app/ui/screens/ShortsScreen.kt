@@ -63,7 +63,6 @@ import com.tubelite.app.playback.TubeMediaSourceFactory
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-private const val SHORT_MAX_SECONDS = 60L
 private const val INITIAL_SHORTS = 24
 private const val EXTRA_SHORTS = 18
 private const val SWIPE_THRESHOLD_PX = 120f
@@ -101,43 +100,47 @@ fun ShortsScreen(
     var isPlaying by remember { mutableStateOf(false) }
     var loadRound by remember { mutableIntStateOf(1) }
 
-    suspend fun loadShorts(round: Int, replace: Boolean = false) {
-        val target = if (round == 1) INITIAL_SHORTS else EXTRA_SHORTS * round
-
-        // Build a lightweight personalized feed from the user's recent searches,
-        // then mix in YouTube's current trending feed. Only <=60 second videos remain.
-        val queries = SearchHistoryStore.getRecent(context, limit = 5)
-        val candidates = mutableListOf<VideoResult>()
-
-        for (query in queries) {
-            try {
-                candidates += YoutubeRepository.search(query)
-            } catch (_: Exception) {
-                // One failed search must not prevent the rest of Shorts from loading.
+        suspend fun loadShorts(
+            round: Int,
+            replace: Boolean = false
+        ) {
+            val target =
+                if (round == 1) {
+                    INITIAL_SHORTS
+                } else {
+                    EXTRA_SHORTS * round
+                }
+        
+            val newItems =
+                YoutubeRepository.getPersonalizedShorts(
+                    context = context,
+                    maxItems = target
+                )
+        
+            if (replace) {
+        
+                shorts =
+                    newItems
+                        .distinctBy { it.url }
+                        .take(target)
+        
+            } else {
+        
+                val existing =
+                    shorts
+                        .map { it.url }
+                        .toSet()
+        
+                shorts =
+                    (
+                        shorts +
+                            newItems.filterNot {
+                                it.url in existing
+                            }
+                        )
+                        .distinctBy { it.url }
             }
         }
-
-        try {
-            candidates += YoutubeRepository.getTrending()
-        } catch (_: Exception) {
-            // Personalized search results can still be used if trending fails.
-        }
-
-        val filtered = candidates
-            .asSequence()
-            .filter { it.durationSeconds in 1..SHORT_MAX_SECONDS }
-            .distinctBy { it.url }
-            .take(target)
-            .toList()
-
-        if (replace) {
-            shorts = filtered
-        } else {
-            val existing = shorts.asSequence().map { it.url }.toSet()
-            shorts = (shorts + filtered.filterNot { it.url in existing })
-                .distinctBy { it.url }
-        }
-    }
 
     suspend fun prepareShort(video: VideoResult, autoPlay: Boolean = true) {
         val c = controller ?: run {
