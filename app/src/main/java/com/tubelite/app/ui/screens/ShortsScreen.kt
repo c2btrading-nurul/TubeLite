@@ -918,108 +918,77 @@ private fun ShortsFullscreenPlayer(
          */
 
         Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .pointerInput(
-                        video.url,
-                        selectedKey = Unit
-                    ) {
-
-                        awaitEachGesture {
-
-                            val down =
-                                awaitFirstDown(
-                                    requireUnconsumed = false
-                                )
-
-                            val startY =
-                                down.position.y
-
-                            var endY =
-                                startY
-
-                            var moved = false
-
-                            while (true) {
-
-                                val event =
-                                    awaitPointerEvent()
-
-                                val change =
-                                    event.changes
-                                        .firstOrNull()
-                                        ?: break
-
-                                endY =
-                                    change.position.y
-
-                                if (
-                                    abs(
-                                        endY - startY
-                                    ) > 20f
-                                ) {
-                                    moved = true
-                                }
-
-                                if (
-                                    change.changedToUp()
-                                ) {
-                                    break
-                                }
-
-                                if (
-                                    change.changedToCanceled()
-                                ) {
-                                    return@awaitEachGesture
-                                }
-                            }
-
-                            val delta =
-                                endY - startY
-
-                            /*
-                             * Swipe down
-                             * = previous
-                             */
-
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .pointerInput(video.url) {
+    
+                    awaitEachGesture {
+    
+                        val down =
+                            awaitFirstDown(
+                                requireUnconsumed = false
+                            )
+    
+                        val startY =
+                            down.position.y
+    
+                        var endY =
+                            startY
+    
+                        var moved = false
+    
+                        while (true) {
+    
+                            val event =
+                                awaitPointerEvent()
+    
+                            val change =
+                                event.changes
+                                    .firstOrNull()
+                                    ?: break
+    
+                            endY =
+                                change.position.y
+    
                             if (
-                                moved &&
-                                delta >
-                                    swipeThreshold
+                                abs(endY - startY) > 20f
                             ) {
-
-                                onPrevious()
-
+                                moved = true
                             }
-
-                            /*
-                             * Swipe up
-                             * = next
-                             */
-
-                            else if (
-                                moved &&
-                                delta <
-                                    -swipeThreshold
+    
+                            if (
+                                change.changedToUp()
                             ) {
-
-                                onNext()
-
+                                break
                             }
-
-                            /*
-                             * Small/no movement
-                             * = tap
-                             */
-
-                            else if (!moved) {
-
-                                onTogglePlay()
+    
+                            if (
+                                change.changedToCanceled()
+                            ) {
+                                return@awaitEachGesture
                             }
                         }
+    
+                        val delta =
+                            endY - startY
+    
+                        if (
+                            moved &&
+                            delta > swipeThreshold
+                        ) {
+                            onPrevious()
+                        } else if (
+                            moved &&
+                            delta < -swipeThreshold
+                        ) {
+                            onNext()
+                        } else if (!moved) {
+                            onTogglePlay()
+                        }
                     }
-        )
+                }
+            )
 
 
         /*
