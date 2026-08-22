@@ -79,10 +79,6 @@ object YoutubeRepository {
         maxItems: Int
     ): List<VideoResult> {
 
-        if (maxItems <= 0) {
-            return emptyList()
-        }
-
         val result = firstPage.items
             .filterIsInstance<StreamInfoItem>()
             .map { it.toVideoResult() }
@@ -91,32 +87,23 @@ object YoutubeRepository {
         var page = firstPage
 
         while (result.size < maxItems) {
-
             val next = page.nextPage ?: break
 
             page = extractor.getPage(next)
 
-            val newItems = page.items
+            result += page.items
                 .filterIsInstance<StreamInfoItem>()
                 .map { it.toVideoResult() }
 
-            if (newItems.isEmpty()) {
+            if (page.items.isEmpty()) {
                 break
             }
-
-            result += newItems
         }
 
         return result
             .distinctBy { it.url }
             .take(maxItems)
     }
-
-    /*
-     * ------------------------------------------------------------
-     * SEARCH
-     * ------------------------------------------------------------
-     */
 
     suspend fun search(
         query: String,
@@ -125,108 +112,92 @@ object YoutubeRepository {
 
         ensureInit()
 
-        if (query.isBlank() || maxItems <= 0) {
-            return@withContext emptyList()
-        }
-
         val extractor =
             ServiceList.YouTube.getSearchExtractor(query)
 
         extractor.fetchPage()
 
         loadMoreItems(
-            extractor = extractor,
-            firstPage = extractor.initialPage,
-            maxItems = maxItems
+            extractor,
+            extractor.initialPage,
+            maxItems
         )
     }
 
     /*
-     * ------------------------------------------------------------
-     * SHORTS DETECTION
-     * ------------------------------------------------------------
+     * NewPipe Extractor-এর বর্তমান version-এ
+     * StreamInfoItem.isShortFormContent() ব্যবহার করা যাবে না।
      *
-     * NewPipe Extractor-এর নতুন version-এ
-     * StreamInfoItem.isShortFormContent() ব্যবহার করা হচ্ছে না।
-     *
-     * Shorts শনাক্ত করার জন্য:
+     * তাই এখানে Shorts শনাক্ত করার জন্য:
      *
      * 1. /shorts/ URL
-     * 2. title-এর মধ্যে #shorts / shorts signal
-     * 3. duration 180 sec বা তার কম
+     * 2. title-এ shorts/#shorts signal
+     * 3. সর্বোচ্চ 180 সেকেন্ড duration
      *
-     * গুরুত্বপূর্ণ:
-     * Search result-এ কখনো duration = 0 আসতে পারে।
-     * সেক্ষেত্রে URL/title-এ Shorts signal থাকলে
-     * সেটাকে reject করা হবে না।
-     * ------------------------------------------------------------
+     * ব্যবহার করা হচ্ছে।
      */
-
     private fun isLikelyShort(
-        video: VideoResult
+        video: VideoResult,
+        allowUnknownDuration: Boolean = false
     ): Boolean {
 
-        val url =
-            video.url
-                .trim()
-                .lowercase()
+        val url = video.url.lowercase()
+        val title = video.title.lowercase()
+        val duration = video.durationSeconds
 
-        val title =
-            video.title
-                .trim()
-                .lowercase()
+        /*
+         * NewPipe search results do not always expose the duration.
+         * A value <= 0 therefore means "unknown", not "not a Short".
+         */
+        if (duration > 180L) {
+            return false
+        }
 
         val explicitShortUrl =
             url.contains("/shorts/") ||
             url.contains("youtube.com/shorts/") ||
             url.contains("youtu.be/shorts/")
 
-        val shortSignals =
-            listOf(
-                "#shorts",
-                "#short",
-                "shorts",
-                "short video"
-            )
+        if (explicitShortUrl) {
+            return true
+        }
 
-        val hasShortSignal =
-            explicitShortUrl ||
-            shortSignals.any { signal ->
-                title.contains(signal)
-            }
+        val shortSignals = listOf(
+            "#shorts",
+            "#short",
+            "shorts",
+            "short video",
+            "youtube short"
+        )
 
-        /*
-         * Duration না পাওয়া গেলে শুধু explicit Shorts signal
-         * থাকলে video-টি allow করা হবে।
-         */
-        if (video.durationSeconds <= 0L) {
-            return hasShortSignal
+        if (shortSignals.any { title.contains(it) }) {
+            return true
         }
 
         /*
-         * Duration 180 sec-এর বেশি হলে Shorts হিসেবে নেওয়া হবে না।
+         * A known duration of 1..180 seconds is a valid Short candidate.
          */
-        if (video.durationSeconds > 180L) {
-            return false
+        if (duration in 1L..180L) {
+            return true
         }
 
         /*
-         * Duration 1..180 sec হলে Shorts discovery query-এর
-         * candidate হিসেবে allow করা হবে।
+         * For queries that explicitly ask YouTube for Shorts, the search
+         * result may have an unknown duration. Keep it instead of returning
+         * an empty feed. The caller still limits the amount of data.
          */
-        return true
+        return allowUnknownDuration && duration <= 0L
     }
 
     /*
-     * ------------------------------------------------------------
-     * PERSONALIZED SHORTS
-     * ------------------------------------------------------------
+     * Personalized Shorts feed.
      *
-     * Search History থেকে personalized Shorts query তৈরি করে।
-     * এরপর generic Shorts এবং trending Shorts ব্যবহার করে।
-     * ------------------------------------------------------------
+     * User-এর Search History থেকে interest নেওয়া হয়।
+     * তারপর সেই interest অনুযায়ী Shorts search করা হয়।
+     *
+     * এরপর generic/trending Shorts search করা হয়
+     * যাতে নতুন ও জনপ্রিয় Shorts-ও feed-এ আসে।
      */
-
     suspend fun getPersonalizedShorts(
         context: Context,
         maxItems: Int = 30
@@ -238,114 +209,94 @@ object YoutubeRepository {
             return@withContext emptyList()
         }
 
-        val historyQueries =
-            try {
-                SearchHistoryStore.getRecent(
-                    context,
-                    8
-                )
-            } catch (_: Exception) {
-                emptyList()
-            }
+        val historyQueries = try {
+            SearchHistoryStore.getRecent(
+                context,
+                8
+            )
+        } catch (_: Exception) {
+            emptyList()
+        }
 
-        val queries =
-            buildList {
+        val queries = buildList {
 
-                /*
-                 * Recent search history
-                 */
-                historyQueries.forEach { query ->
+            /*
+             * User-এর recent search থেকে personalized queries
+             */
+            historyQueries.forEach { query ->
 
-                    val q =
-                        query
-                            .trim()
+                val q = query.trim()
 
-                    if (q.isNotEmpty()) {
-
-                        add("$q #shorts")
-                        add("$q shorts")
-                    }
+                if (q.isNotEmpty()) {
+                    add("$q #shorts")
+                    add("$q shorts")
                 }
-
-                /*
-                 * Generic Shorts discovery
-                 */
-                add("#shorts")
-                add("shorts")
-                add("trending shorts")
-                add("viral shorts")
-                add("short video")
             }
-                .distinct()
 
-        val found =
-            mutableListOf<VideoResult>()
+            /*
+             * Generic Shorts discovery
+             */
+            add("#shorts")
+            add("trending shorts")
+            add("viral shorts")
+        }.distinct()
+
+        val found = mutableListOf<VideoResult>()
 
         for (query in queries) {
 
-            if (
-                found
-                    .distinctBy { it.url }
-                    .size >= maxItems
-            ) {
+            if (found.distinctBy { it.url }.size >= maxItems) {
                 break
             }
 
             try {
 
                 val extractor =
-                    ServiceList.YouTube
-                        .getSearchExtractor(query)
+                    ServiceList.YouTube.getSearchExtractor(query)
 
                 extractor.fetchPage()
 
-                val candidates =
-                    loadMoreItems(
-                        extractor = extractor,
-                        firstPage = extractor.initialPage,
-                        maxItems = minOf(
-                            50,
-                            maxItems * 3
-                        )
+                val candidates = loadMoreItems(
+                    extractor = extractor,
+                    firstPage = extractor.initialPage,
+                    maxItems = minOf(
+                        40,
+                        maxItems * 2
                     )
+                )
 
-                found +=
-                    candidates.filter {
-                        isLikelyShort(it)
-                    }
+                found += candidates.filter {
+                    isLikelyShort(
+                        video = it,
+                        allowUnknownDuration = true
+                    )
+                }
 
             } catch (_: Exception) {
                 /*
-                 * একটি query fail করলে
-                 * পরের query চলবে।
+                 * একটি query fail করলে পরের query চলবে।
                  */
             }
         }
 
         /*
          * Search থেকে পর্যাপ্ত Shorts না পেলে
-         * trending feed থেকেও candidate নেওয়া হবে।
+         * YouTube trending feed থেকেও Shorts নেওয়া হবে।
          */
-        if (
-            found
-                .distinctBy { it.url }
-                .size < maxItems
-        ) {
+        if (found.distinctBy { it.url }.size < maxItems) {
 
             try {
 
-                val trending =
-                    getTrending(
-                        maxItems = minOf(
-                            100,
-                            maxItems * 4
-                        )
+                val trending = getTrending(
+                    maxItems = minOf(
+                        80,
+                        maxItems * 3
                     )
+                ).filter {
+                    isLikelyShort(it)
+                }
 
-                found +=
-                    trending.filter {
-                        isLikelyShort(it)
-                    }
+                found += trending
 
             } catch (_: Exception) {
                 /*
@@ -354,34 +305,23 @@ object YoutubeRepository {
             }
         }
 
-        /*
-         * Final cleanup
-         */
         return@withContext found
-            .filter { video ->
-
-                /*
-                 * Duration জানা থাকলে 180 sec-এর মধ্যে হতে হবে।
-                 *
-                 * duration = 0 হলে URL/title signal-এর উপর
-                 * isLikelyShort() already সিদ্ধান্ত নিয়েছে।
-                 */
-                video.durationSeconds <= 0L ||
-                    video.durationSeconds <= 180L
+            .filter {
+                it.durationSeconds <= 0L ||
+                        it.durationSeconds in 1L..180L
             }
-            .distinctBy { it.url }
+            .distinctBy {
+                it.url
+            }
             .take(maxItems)
     }
 
     /*
-     * ------------------------------------------------------------
-     * OLD SHORTS API
-     * ------------------------------------------------------------
+     * পুরোনো caller-এর compatibility রাখার জন্য
+     * getShorts() রাখা হয়েছে।
      *
-     * পুরোনো caller থাকলে যেন ভেঙে না যায়।
-     * ------------------------------------------------------------
+     * এখানে isShortFormContent() নেই।
      */
-
     suspend fun getShorts(
         maxItems: Int = 30
     ): List<VideoResult> = withContext(Dispatchers.IO) {
@@ -392,50 +332,43 @@ object YoutubeRepository {
             return@withContext emptyList()
         }
 
-        val queries =
-            listOf(
-                "#shorts",
-                "shorts",
-                "trending shorts",
-                "viral shorts",
-                "short video"
-            )
+        val queries = listOf(
+            "#shorts",
+            "shorts",
+            "trending shorts",
+            "viral shorts"
+        )
 
-        val found =
-            mutableListOf<VideoResult>()
+        val found = mutableListOf<VideoResult>()
 
         for (query in queries) {
 
-            if (
-                found
-                    .distinctBy { it.url }
-                    .size >= maxItems
-            ) {
+            if (found.distinctBy { it.url }.size >= maxItems) {
                 break
             }
 
             try {
 
                 val extractor =
-                    ServiceList.YouTube
-                        .getSearchExtractor(query)
+                    ServiceList.YouTube.getSearchExtractor(query)
 
                 extractor.fetchPage()
 
-                val items =
-                    loadMoreItems(
-                        extractor = extractor,
-                        firstPage = extractor.initialPage,
-                        maxItems = minOf(
-                            50,
-                            maxItems * 3
-                        )
+                val items = loadMoreItems(
+                    extractor = extractor,
+                    firstPage = extractor.initialPage,
+                    maxItems = minOf(
+                        40,
+                        maxItems * 2
                     )
+                )
 
-                found +=
-                    items.filter {
-                        isLikelyShort(it)
-                    }
+                found += items.filter {
+                    isLikelyShort(
+                        video = it,
+                        allowUnknownDuration = true
+                    )
+                }
 
             } catch (_: Exception) {
                 /*
@@ -444,56 +377,18 @@ object YoutubeRepository {
             }
         }
 
-        /*
-         * Trending fallback
-         */
-        if (
-            found
-                .distinctBy { it.url }
-                .size < maxItems
-        ) {
-
-            try {
-
-                found +=
-                    getTrending(
-                        maxItems = minOf(
-                            100,
-                            maxItems * 4
-                        )
-                    ).filter {
-                        isLikelyShort(it)
-                    }
-
-            } catch (_: Exception) {
-                // Ignore
-            }
-        }
-
         return@withContext found
-            .filter { video ->
-                video.durationSeconds <= 0L ||
-                    video.durationSeconds <= 180L
+            .distinctBy {
+                it.url
             }
-            .distinctBy { it.url }
             .take(maxItems)
     }
-
-    /*
-     * ------------------------------------------------------------
-     * TRENDING
-     * ------------------------------------------------------------
-     */
 
     suspend fun getTrending(
         maxItems: Int = 40
     ): List<VideoResult> = withContext(Dispatchers.IO) {
 
         ensureInit()
-
-        if (maxItems <= 0) {
-            return@withContext emptyList()
-        }
 
         val kioskList =
             ServiceList.YouTube.kioskList
@@ -504,29 +399,19 @@ object YoutubeRepository {
         extractor.fetchPage()
 
         loadMoreItems(
-            extractor = extractor,
-            firstPage = extractor.initialPage,
-            maxItems = maxItems
+            extractor,
+            extractor.initialPage,
+            maxItems
         ).filter {
             it.durationSeconds > 0
         }
     }
-
-    /*
-     * ------------------------------------------------------------
-     * RELATED VIDEOS
-     * ------------------------------------------------------------
-     */
 
     suspend fun getRelated(
         videoUrl: String
     ): List<VideoResult> = withContext(Dispatchers.IO) {
 
         ensureInit()
-
-        if (videoUrl.isBlank()) {
-            return@withContext emptyList()
-        }
 
         try {
 
@@ -551,18 +436,16 @@ object YoutubeRepository {
 
             } else {
 
-                val extra =
-                    try {
+                val extra = try {
 
-                        search(
-                            info.name,
-                            maxItems = 30
-                        )
+                    search(
+                        info.name,
+                        maxItems = 30
+                    )
 
-                    } catch (_: Exception) {
-
-                        emptyList()
-                    }
+                } catch (_: Exception) {
+                    emptyList()
+                }
 
                 (directRelated + extra)
                     .filter {
@@ -575,16 +458,9 @@ object YoutubeRepository {
             }
 
         } catch (_: Exception) {
-
             emptyList()
         }
     }
-
-    /*
-     * ------------------------------------------------------------
-     * CHANNEL VIDEOS
-     * ------------------------------------------------------------
-     */
 
     suspend fun getChannelVideos(
         channelUrl: String,
@@ -593,16 +469,10 @@ object YoutubeRepository {
 
         ensureInit()
 
-        if (
-            channelUrl.isBlank() ||
-            maxItems <= 0
-        ) {
-            return@withContext emptyList()
-        }
-
         val channelExtractor =
-            ServiceList.YouTube
-                .getChannelExtractor(channelUrl)
+            ServiceList.YouTube.getChannelExtractor(
+                channelUrl
+            )
 
         channelExtractor.fetchPage()
 
@@ -617,25 +487,18 @@ object YoutubeRepository {
                 ?: return@withContext emptyList()
 
         val tabExtractor =
-            ServiceList.YouTube
-                .getChannelTabExtractor(
-                    videosTabHandler
-                )
+            ServiceList.YouTube.getChannelTabExtractor(
+                videosTabHandler
+            )
 
         tabExtractor.fetchPage()
 
         loadMoreItems(
-            extractor = tabExtractor,
-            firstPage = tabExtractor.initialPage,
-            maxItems = maxItems
+            tabExtractor,
+            tabExtractor.initialPage,
+            maxItems
         )
     }
-
-    /*
-     * ------------------------------------------------------------
-     * CHANNEL INFO
-     * ------------------------------------------------------------
-     */
 
     suspend fun getChannel(
         channelUrl: String
@@ -643,34 +506,25 @@ object YoutubeRepository {
 
         ensureInit()
 
-        if (channelUrl.isBlank()) {
-            return@withContext ChannelInfo(
-                name = "",
-                avatarUrl = null,
-                videos = emptyList()
-            )
-        }
-
         val channelExtractor =
-            ServiceList.YouTube
-                .getChannelExtractor(channelUrl)
+            ServiceList.YouTube.getChannelExtractor(
+                channelUrl
+            )
 
         channelExtractor.fetchPage()
 
         val name =
             channelExtractor.name ?: ""
 
-        val avatar =
-            try {
+        val avatar = try {
 
-                channelExtractor.avatars
-                    ?.firstOrNull()
-                    ?.url
+            channelExtractor.avatars
+                ?.firstOrNull()
+                ?.url
 
-            } catch (_: Exception) {
-
-                null
-            }
+        } catch (_: Exception) {
+            null
+        }
 
         val videosTabHandler =
             channelExtractor.tabs.firstOrNull {
@@ -685,10 +539,9 @@ object YoutubeRepository {
             if (videosTabHandler != null) {
 
                 val tabExtractor =
-                    ServiceList.YouTube
-                        .getChannelTabExtractor(
-                            videosTabHandler
-                        )
+                    ServiceList.YouTube.getChannelTabExtractor(
+                        videosTabHandler
+                    )
 
                 tabExtractor.fetchPage()
 
@@ -699,32 +552,21 @@ object YoutubeRepository {
                     }
 
             } else {
-
                 emptyList()
             }
 
         ChannelInfo(
-            name = name,
-            avatarUrl = avatar,
-            videos = videos
+            name,
+            avatar,
+            videos
         )
     }
-
-    /*
-     * ------------------------------------------------------------
-     * PLAYABLE STREAM
-     * ------------------------------------------------------------
-     */
 
     suspend fun getPlayableStream(
         videoUrl: String
     ): PlayableStream = withContext(Dispatchers.IO) {
 
         ensureInit()
-
-        if (videoUrl.isBlank()) {
-            error("Video URL is empty")
-        }
 
         val info =
             StreamInfo.getInfo(
@@ -737,14 +579,11 @@ object YoutubeRepository {
                 .firstOrNull()
                 ?.url
 
-        /*
-         * Progressive video + audio
-         */
         val progressiveOptions =
             info.videoStreams
                 ?.filter {
                     !it.isVideoOnly &&
-                        it.content != null
+                            it.content != null
                 }
                 ?.sortedByDescending {
                     it.getResolution()
@@ -755,23 +594,15 @@ object YoutubeRepository {
                 ?.map {
 
                     QualityOption(
-                        label =
-                            it.getResolution()
-                                ?: "Auto",
-
-                        progressiveUrl =
-                            it.content,
-
-                        videoOnlyUrl = null,
-                        audioOnlyUrl = null,
-                        hlsUrl = null
+                        it.getResolution() ?: "Auto",
+                        it.content,
+                        null,
+                        null,
+                        null
                     )
                 }
                 ?: emptyList()
 
-        /*
-         * Audio streams
-         */
         val audioStreams =
             info.audioStreams
                 ?.filter {
@@ -784,9 +615,6 @@ object YoutubeRepository {
                 it.averageBitrate
             }
 
-        /*
-         * Video-only + best audio
-         */
         val videoOnlyOptions =
             if (bestAudio != null) {
 
@@ -803,54 +631,36 @@ object YoutubeRepository {
                     ?.map {
 
                         QualityOption(
-                            label =
-                                it.getResolution()
-                                    ?: "Auto",
-
-                            progressiveUrl = null,
-
-                            videoOnlyUrl =
-                                it.content,
-
-                            audioOnlyUrl =
-                                bestAudio.content,
-
-                            hlsUrl = null
+                            it.getResolution() ?: "Auto",
+                            null,
+                            it.content,
+                            bestAudio.content,
+                            null
                         )
                     }
                     ?: emptyList()
 
             } else {
-
                 emptyList()
             }
 
-        /*
-         * HLS
-         */
         val hlsOptions =
-            info.hlsUrl?.let { hls ->
+            info.hlsUrl?.let {
 
                 listOf(
                     QualityOption(
-                        label = "Auto (Live)",
-                        progressiveUrl = null,
-                        videoOnlyUrl = null,
-                        audioOnlyUrl = null,
-                        hlsUrl = hls
+                        "Auto (Live)",
+                        null,
+                        null,
+                        null,
+                        it
                     )
                 )
 
             } ?: emptyList()
 
-        /*
-         * All video options
-         */
         val allOptions =
-            (
-                progressiveOptions +
-                    videoOnlyOptions
-                )
+            (progressiveOptions + videoOnlyOptions)
                 .distinctBy {
                     it.label
                 }
@@ -862,9 +672,6 @@ object YoutubeRepository {
             error("Could not get any stream")
         }
 
-        /*
-         * Audio options
-         */
         val audioOptions =
             audioStreams
                 .distinctBy {
@@ -876,26 +683,18 @@ object YoutubeRepository {
                 .mapIndexed { index, audio ->
 
                     val kbps =
-                        if (
-                            audio.averageBitrate > 0
-                        ) {
-
+                        if (audio.averageBitrate > 0) {
                             "${audio.averageBitrate / 1000}kbps"
-
                         } else {
-
                             "Audio ${index + 1}"
                         }
 
                     AudioOption(
-                        label = kbps,
-                        url = audio.content
+                        kbps,
+                        audio.content
                     )
                 }
 
-        /*
-         * Subtitle options
-         */
         val subtitleOptions =
             try {
 
@@ -910,26 +709,21 @@ object YoutubeRepository {
                                 ?: "Subtitle"
 
                         val mime =
-                            subtitle.format
-                                ?.mimeType
+                            subtitle.format?.mimeType
                                 ?: "text/vtt"
 
                         SubtitleOption(
-                            label = language,
-                            url = subtitle.url!!,
-                            mimeType = mime
+                            language,
+                            subtitle.url!!,
+                            mime
                         )
                     }
                     ?: emptyList()
 
             } catch (_: Exception) {
-
                 emptyList()
             }
 
-        /*
-         * Channel avatar
-         */
         val channelAvatar =
             try {
 
@@ -938,20 +732,13 @@ object YoutubeRepository {
                     ?.url
 
             } catch (_: Exception) {
-
                 null
             }
 
-        /*
-         * Channel URL
-         */
         val channelUrl =
             try {
-
                 info.uploaderUrl
-
             } catch (_: Exception) {
-
                 null
             }
 
